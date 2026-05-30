@@ -112,7 +112,16 @@ body {
 	background: var(--unknown);
 }
 
-.incidents-btn {
+.toolbar {
+	display: flex;
+	gap: 0.4rem;
+	align-items: center;
+}
+
+.tbar-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
 	background: var(--panel);
 	color: var(--text);
 	border: 1px solid var(--border);
@@ -121,10 +130,176 @@ body {
 	font-size: 0.8rem;
 	font-weight: 600;
 	cursor: pointer;
+	white-space: nowrap;
 }
 
-.incidents-btn:hover {
+.tbar-btn:hover {
 	border-color: var(--muted);
+}
+
+.tbar-btn.is-active {
+	background: var(--degraded);
+	border-color: var(--degraded-hi);
+	color: #fff;
+}
+
+.kbd {
+	font-size: 0.68rem;
+	font-weight: 600;
+	color: var(--muted);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 0 0.3rem;
+	line-height: 1.4;
+}
+
+/* --- Command palette --- */
+.palette {
+	position: fixed;
+	inset: 0;
+	z-index: 80;
+	background: rgba(0, 0, 0, 0.5);
+	display: flex;
+	justify-content: center;
+	align-items: flex-start;
+	padding-top: 12vh;
+}
+
+.palette[hidden] {
+	display: none;
+}
+
+.palette__box {
+	width: min(560px, calc(100vw - 2rem));
+	background: var(--panel);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+	overflow: hidden;
+}
+
+.palette__input {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 0.9rem 1rem;
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--border);
+	color: var(--text);
+	font-size: 1rem;
+	outline: none;
+}
+
+.palette__results {
+	list-style: none;
+	margin: 0;
+	padding: 0.35rem;
+	max-height: 50vh;
+	overflow-y: auto;
+}
+
+.palette__item {
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+	padding: 0.5rem 0.6rem;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 0.88rem;
+}
+
+.palette__item.is-active {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.palette__cmd {
+	color: var(--muted);
+	width: 0.6rem;
+	text-align: center;
+}
+
+.palette__label {
+	font-weight: 600;
+}
+
+.palette__hint {
+	margin-left: auto;
+	color: var(--muted);
+	font-size: 0.74rem;
+}
+
+.palette__empty {
+	padding: 1rem;
+	text-align: center;
+	color: var(--muted);
+	list-style: none;
+}
+
+/* --- Customize panel extras --- */
+.panel__sub {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0.5rem 1rem;
+	border-bottom: 1px solid var(--border);
+	font-size: 0.8rem;
+	color: var(--muted);
+}
+
+.link-btn {
+	background: none;
+	border: none;
+	color: var(--down-hi);
+	font-size: 0.8rem;
+	font-weight: 600;
+	cursor: pointer;
+	padding: 0;
+}
+
+.cz-group {
+	margin-bottom: 0.75rem;
+}
+
+.cz-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.3rem 0.2rem;
+	font-size: 0.85rem;
+	cursor: pointer;
+}
+
+.cz-row input {
+	accent-color: var(--up-hi);
+	cursor: pointer;
+}
+
+.cz-row--head {
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	font-size: 0.72rem;
+	color: var(--muted);
+	border-bottom: 1px solid var(--border);
+	margin-bottom: 0.2rem;
+}
+
+.cz-row .dot {
+	width: 0.55rem;
+	height: 0.55rem;
+	border-radius: 50%;
+}
+.cz-row .dot.is-up {
+	background: var(--up-hi);
+}
+.cz-row .dot.is-degraded {
+	background: var(--degraded-hi);
+}
+.cz-row .dot.is-down {
+	background: var(--down-hi);
+}
+.cz-row .dot.is-unknown {
+	background: var(--unknown);
 }
 
 /* --- Incidents panel --- */
@@ -257,7 +432,8 @@ body {
 }
 
 .grid__loading,
-.grid__error {
+.grid__error,
+.grid__empty {
 	position: absolute;
 	inset: 0;
 	display: flex;
@@ -265,6 +441,9 @@ body {
 	justify-content: center;
 	color: var(--muted);
 	margin: 0;
+	font-size: 1rem;
+	padding: 1rem;
+	text-align: center;
 }
 
 .grid__error {
@@ -324,6 +503,24 @@ body {
 }
 .tile.is-unknown {
 	background: var(--unknown);
+}
+
+/* Flash a tile when it's picked from the command palette. */
+.tile--flash {
+	outline: 3px solid #fff;
+	outline-offset: -3px;
+	z-index: 5;
+	animation: tile-flash 0.8s ease-in-out 0s 3;
+}
+
+@keyframes tile-flash {
+	0%,
+	100% {
+		outline-color: rgba(255, 255, 255, 0.25);
+	}
+	50% {
+		outline-color: rgba(255, 255, 255, 0.95);
+	}
 }
 
 .tile__name {

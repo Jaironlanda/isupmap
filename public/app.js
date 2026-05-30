@@ -21,6 +21,56 @@ const tooltipEl = document.getElementById("tooltip");
 let previous = null;
 /** Latest snapshot, kept so we can re-layout on window resize. */
 let latest = null;
+/** Service id to briefly highlight (e.g. after picking it in the palette). */
+let highlightId = null;
+let highlightTimer = null;
+
+// --- Local preferences (browser-only, no server state) --------------------
+
+const PREFS_KEY = "isup:prefs";
+
+function loadPrefs() {
+	try {
+		const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
+		return { hidden: new Set(Array.isArray(raw.hidden) ? raw.hidden : []), problemsOnly: !!raw.problemsOnly };
+	} catch {
+		return { hidden: new Set(), problemsOnly: false };
+	}
+}
+
+function savePrefs() {
+	try {
+		localStorage.setItem(PREFS_KEY, JSON.stringify({ hidden: [...prefs.hidden], problemsOnly: prefs.problemsOnly }));
+	} catch {
+		/* storage unavailable (private mode); prefs simply won't persist */
+	}
+}
+
+const prefs = loadPrefs();
+
+/** The services to actually render, after applying hide + problems-only prefs. */
+function visibleServices() {
+	if (!latest) return [];
+	let v = latest.filter((s) => !prefs.hidden.has(s.id));
+	if (prefs.problemsOnly) v = v.filter((s) => s.status !== "up");
+	return v;
+}
+
+/** Filter the latest snapshot through prefs, then render (or show an empty state). */
+function renderView() {
+	if (!latest) return;
+	const v = visibleServices();
+	if (v.length === 0) {
+		const anyVisible = latest.some((s) => !prefs.hidden.has(s.id));
+		const msg =
+			prefs.problemsOnly && anyVisible
+				? "✓ All selected services are operational"
+				: "No services selected — open Customize to add some.";
+		gridEl.innerHTML = `<p class="grid__empty">${escapeHtml(msg)}</p>`;
+		return;
+	}
+	render(v);
+}
 
 async function poll() {
 	try {
@@ -28,7 +78,7 @@ async function poll() {
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const data = await res.json();
 		latest = data.services;
-		render(latest);
+		renderView();
 		updateTimestamp(data.updatedAt);
 		detectChanges(latest);
 	} catch (err) {
@@ -179,7 +229,7 @@ function renderSector(rect) {
 function renderTile(rect) {
 	const svc = rect.data;
 	const tile = document.createElement("article");
-	tile.className = `tile is-${svc.status}`;
+	tile.className = `tile is-${svc.status}${svc.id === highlightId ? " tile--flash" : ""}`;
 	setBox(tile, rect.x, rect.y, rect.w, rect.h, TILE_GAP / 2);
 	tile._svc = svc; // stash data for the hover card
 
@@ -337,6 +387,8 @@ function detectChanges(services) {
 		for (const [id, svc] of current) {
 			const prev = previous.get(id);
 			if (!prev || prev.status === svc.status) continue;
+			// Don't toast for services the user has hidden.
+			if (prefs.hidden.has(id)) continue;
 			// Only toast on meaningful operational transitions, not unknown<->x noise.
 			if (prev.status === "unknown" || svc.status === "unknown") continue;
 			showToast(svc, prev.status);
@@ -429,6 +481,7 @@ function renderIncidents(incidents) {
 
 function toggleIncidents(open) {
 	const show = open ?? incidentsPanel.hidden;
+	if (show) closePanels({ except: "incidents" });
 	incidentsPanel.hidden = !show;
 	incidentsBtn.setAttribute("aria-expanded", String(show));
 	if (show) loadIncidents();
@@ -436,8 +489,258 @@ function toggleIncidents(open) {
 
 incidentsBtn.addEventListener("click", () => toggleIncidents());
 incidentsClose.addEventListener("click", () => toggleIncidents(false));
+
+// --- Customize panel (show/hide services, persisted locally) --------------
+
+const customizeBtn = document.getElementById("customizeBtn");
+const customizeClose = document.getElementById("customizeClose");
+const customizePanel = document.getElementById("customizePanel");
+const customizeList = document.getElementById("customizeList");
+const customizeReset = document.getElementById("customizeReset");
+
+function toggleCustomize(open) {
+	const show = open ?? customizePanel.hidden;
+	if (show) closePanels({ except: "customize" });
+	customizePanel.hidden = !show;
+	customizeBtn.setAttribute("aria-expanded", String(show));
+	if (show) renderCustomize();
+}
+
+function renderCustomize() {
+	if (!latest) {
+		customizeList.innerHTML = `<p class="panel__empty">Loading…</p>`;
+		return;
+	}
+	const byCategory = new Map();
+	for (const svc of latest) {
+		if (!byCategory.has(svc.category)) byCategory.set(svc.category, []);
+		byCategory.get(svc.category).push(svc);
+	}
+
+	const shown = latest.filter((s) => !prefs.hidden.has(s.id)).length;
+	document.getElementById("customizeCount").textContent = `${shown} of ${latest.length} shown`;
+
+	let html = "";
+	for (const [category, items] of byCategory) {
+		const allShown = items.every((s) => !prefs.hidden.has(s.id));
+		html += `<div class="cz-group">
+			<label class="cz-row cz-row--head">
+				<input type="checkbox" data-category="${escapeHtml(category)}" ${allShown ? "checked" : ""} />
+				<span>${escapeHtml(category)}</span>
+			</label>`;
+		for (const svc of items) {
+			html += `<label class="cz-row">
+				<input type="checkbox" data-id="${escapeHtml(svc.id)}" ${prefs.hidden.has(svc.id) ? "" : "checked"} />
+				<span class="dot is-${svc.status}"></span>
+				<span>${escapeHtml(svc.name)}</span>
+			</label>`;
+		}
+		html += `</div>`;
+	}
+	customizeList.innerHTML = html;
+}
+
+// Delegated change handler for the customize checkboxes.
+customizeList.addEventListener("change", (e) => {
+	const cb = e.target;
+	if (!(cb instanceof HTMLInputElement)) return;
+	if (cb.dataset.id) {
+		if (cb.checked) prefs.hidden.delete(cb.dataset.id);
+		else prefs.hidden.add(cb.dataset.id);
+	} else if (cb.dataset.category) {
+		for (const svc of latest.filter((s) => s.category === cb.dataset.category)) {
+			if (cb.checked) prefs.hidden.delete(svc.id);
+			else prefs.hidden.add(svc.id);
+		}
+	}
+	savePrefs();
+	renderView();
+	renderCustomize();
+});
+
+customizeReset.addEventListener("click", () => {
+	prefs.hidden.clear();
+	prefs.problemsOnly = false;
+	savePrefs();
+	syncProblemsBtn();
+	renderView();
+	renderCustomize();
+});
+
+customizeBtn.addEventListener("click", () => toggleCustomize());
+customizeClose.addEventListener("click", () => toggleCustomize(false));
+
+function closePanels({ except } = {}) {
+	if (except !== "incidents") toggleIncidentsClosed();
+	if (except !== "customize") customizePanel.hidden = true;
+}
+// Avoid recursion: close incidents without re-triggering closePanels.
+function toggleIncidentsClosed() {
+	incidentsPanel.hidden = true;
+	incidentsBtn.setAttribute("aria-expanded", "false");
+}
+
+// --- Problems-only filter -------------------------------------------------
+
+const problemsBtn = document.getElementById("problemsBtn");
+
+function syncProblemsBtn() {
+	problemsBtn.classList.toggle("is-active", prefs.problemsOnly);
+	problemsBtn.setAttribute("aria-pressed", String(prefs.problemsOnly));
+}
+
+problemsBtn.addEventListener("click", () => {
+	prefs.problemsOnly = !prefs.problemsOnly;
+	savePrefs();
+	syncProblemsBtn();
+	renderView();
+});
+
+// --- Command palette (⌘K) -------------------------------------------------
+
+const paletteEl = document.getElementById("palette");
+const paletteInput = document.getElementById("paletteInput");
+const paletteResults = document.getElementById("paletteResults");
+let paletteItems = [];
+let paletteActive = 0;
+
+/** Loose subsequence match: do the query chars appear in order in the text? */
+function fuzzyMatch(query, text) {
+	if (!query) return true;
+	const t = text.toLowerCase();
+	let i = 0;
+	for (const ch of query.toLowerCase()) {
+		i = t.indexOf(ch, i);
+		if (i === -1) return false;
+		i++;
+	}
+	return true;
+}
+
+function commandItems() {
+	return [
+		{
+			label: prefs.problemsOnly ? "Show all statuses" : "Filter: problems only",
+			hint: "filter",
+			run: () => problemsBtn.click(),
+		},
+		{ label: "Customize services", hint: "view", run: () => toggleCustomize(true) },
+		{ label: "Recent incidents", hint: "view", run: () => toggleIncidents(true) },
+		{ label: "Show all services", hint: "reset", run: () => customizeReset.click() },
+	];
+}
+
+function buildPaletteItems(query) {
+	const commands = commandItems()
+		.filter((c) => fuzzyMatch(query, c.label))
+		.map((c) => ({ ...c, kind: "command" }));
+	const services = (latest ?? [])
+		.filter((s) => fuzzyMatch(query, `${s.name} ${s.category}`))
+		.sort((a, b) => a.name.localeCompare(b.name))
+		.map((s) => ({
+			label: s.name,
+			hint: `${s.category} · ${STATUS_LABEL[s.status]}`,
+			status: s.status,
+			kind: "service",
+			run: () => focusService(s.id),
+		}));
+	return [...commands, ...services];
+}
+
+function renderPalette(query) {
+	paletteItems = buildPaletteItems(query);
+	paletteActive = 0;
+	if (paletteItems.length === 0) {
+		paletteResults.innerHTML = `<li class="palette__empty">No matches</li>`;
+		return;
+	}
+	paletteResults.innerHTML = paletteItems
+		.map(
+			(it, i) => `<li class="palette__item${i === 0 ? " is-active" : ""}" data-i="${i}" role="option">
+			${it.kind === "service" ? `<span class="dot is-${it.status}"></span>` : `<span class="palette__cmd">›</span>`}
+			<span class="palette__label">${escapeHtml(it.label)}</span>
+			<span class="palette__hint">${escapeHtml(it.hint)}</span>
+		</li>`,
+		)
+		.join("");
+}
+
+function setPaletteActive(idx) {
+	const items = paletteResults.querySelectorAll(".palette__item");
+	if (items.length === 0) return;
+	paletteActive = (idx + items.length) % items.length;
+	items.forEach((el, i) => el.classList.toggle("is-active", i === paletteActive));
+	items[paletteActive].scrollIntoView({ block: "nearest" });
+}
+
+function openPalette() {
+	closePanels();
+	paletteEl.hidden = false;
+	paletteInput.value = "";
+	renderPalette("");
+	paletteInput.focus();
+}
+
+function closePalette() {
+	paletteEl.hidden = true;
+}
+
+function runPaletteItem(i) {
+	const it = paletteItems[i];
+	if (!it) return;
+	closePalette();
+	it.run();
+}
+
+paletteInput.addEventListener("input", () => renderPalette(paletteInput.value.trim()));
+paletteInput.addEventListener("keydown", (e) => {
+	if (e.key === "ArrowDown") {
+		e.preventDefault();
+		setPaletteActive(paletteActive + 1);
+	} else if (e.key === "ArrowUp") {
+		e.preventDefault();
+		setPaletteActive(paletteActive - 1);
+	} else if (e.key === "Enter") {
+		e.preventDefault();
+		runPaletteItem(paletteActive);
+	}
+});
+paletteResults.addEventListener("click", (e) => {
+	const li = e.target.closest(".palette__item");
+	if (li) runPaletteItem(Number(li.dataset.i));
+});
+paletteEl.addEventListener("click", (e) => {
+	if (e.target === paletteEl) closePalette(); // click backdrop
+});
+document.getElementById("searchBtn").addEventListener("click", openPalette);
+
+/** Bring a service into view and flash it (used by the palette). */
+function focusService(id) {
+	prefs.hidden.delete(id);
+	const svc = latest?.find((s) => s.id === id);
+	if (prefs.problemsOnly && svc && svc.status === "up") prefs.problemsOnly = false;
+	savePrefs();
+	syncProblemsBtn();
+	highlightId = id;
+	renderView();
+	clearTimeout(highlightTimer);
+	highlightTimer = setTimeout(() => {
+		highlightId = null;
+		renderView();
+	}, 2600);
+}
+
+// Global keyboard shortcuts.
 document.addEventListener("keydown", (e) => {
-	if (e.key === "Escape" && !incidentsPanel.hidden) toggleIncidents(false);
+	if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+		e.preventDefault();
+		paletteEl.hidden ? openPalette() : closePalette();
+		return;
+	}
+	if (e.key === "Escape") {
+		if (!paletteEl.hidden) closePalette();
+		else closePanels();
+	}
 });
 
 // --- Bootstrap ------------------------------------------------------------
@@ -446,8 +749,9 @@ document.addEventListener("keydown", (e) => {
 let resizeTimer = null;
 window.addEventListener("resize", () => {
 	clearTimeout(resizeTimer);
-	resizeTimer = setTimeout(() => latest && render(latest), 150);
+	resizeTimer = setTimeout(renderView, 150);
 });
 
+syncProblemsBtn();
 poll();
 setInterval(poll, POLL_INTERVAL_MS);

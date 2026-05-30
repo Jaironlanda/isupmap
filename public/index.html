@@ -21,9 +21,14 @@
 					<li><span class="swatch is-down"></span>Down</li>
 					<li><span class="swatch is-unknown"></span>Unknown</li>
 				</ul>
-				<button id="incidentsBtn" class="incidents-btn" type="button" aria-expanded="false" aria-controls="incidentsPanel">
-					Incidents
-				</button>
+				<div class="toolbar">
+					<button id="searchBtn" class="tbar-btn" type="button" aria-haspopup="dialog" title="Search (⌘K)">
+						Search <span class="kbd">⌘K</span>
+					</button>
+					<button id="problemsBtn" class="tbar-btn" type="button" aria-pressed="false">Problems only</button>
+					<button id="customizeBtn" class="tbar-btn" type="button" aria-expanded="false" aria-controls="customizePanel">Customize</button>
+					<button id="incidentsBtn" class="tbar-btn" type="button" aria-expanded="false" aria-controls="incidentsPanel">Incidents</button>
+				</div>
 			</div>
 		</header>
 
@@ -38,6 +43,33 @@
 			</div>
 			<div id="incidentsList" class="panel__list"></div>
 		</aside>
+
+		<aside id="customizePanel" class="panel" aria-label="Customize services" hidden>
+			<div class="panel__head">
+				<h2>Customize</h2>
+				<button id="customizeClose" class="panel__close" type="button" aria-label="Close">×</button>
+			</div>
+			<div class="panel__sub">
+				<span id="customizeCount"></span>
+				<button id="customizeReset" class="link-btn" type="button">Reset</button>
+			</div>
+			<div id="customizeList" class="panel__list"></div>
+		</aside>
+
+		<div id="palette" class="palette" hidden>
+			<div class="palette__box" role="dialog" aria-label="Command palette">
+				<input
+					id="paletteInput"
+					class="palette__input"
+					type="text"
+					placeholder="Search services or run a command…"
+					autocomplete="off"
+					spellcheck="false"
+					aria-label="Search services or run a command"
+				/>
+				<ul id="paletteResults" class="palette__results" role="listbox"></ul>
+			</div>
+		</div>
 
 		<div id="tooltip" class="tooltip" role="tooltip" hidden></div>
 
