@@ -1,0 +1,10 @@
+# Security headers for static assets (HTML/CSS/JS).
+# NOTE: these do NOT apply to Worker-generated responses (e.g. /api/*) — those
+# headers are set in src/index.ts. See:
+# https://developers.cloudflare.com/workers/static-assets/headers/
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(), camera=(), microphone=()
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'

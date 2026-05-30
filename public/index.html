@@ -3,10 +3,46 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Hello, World!</title>
+		<title>IsUp — Service Status Heatmap</title>
+		<meta name="description" content="Live up/down heatmap for popular services." />
+		<link rel="stylesheet" href="/styles.css" />
 	</head>
 	<body>
-		<h1 id="heading">Hello, World!</h1>
-		<p>This page comes from a static asset stored at `public/index.html` as configured in `wrangler.jsonc`.</p>
+		<header class="header">
+			<div class="header__title">
+				<h1>IsUp</h1>
+				<span class="header__subtitle">Live service status heatmap</span>
+			</div>
+			<div class="header__meta">
+				<span id="updated" class="updated">Loading…</span>
+				<ul class="legend" aria-label="Status legend">
+					<li><span class="swatch is-up"></span>Up</li>
+					<li><span class="swatch is-degraded"></span>Degraded</li>
+					<li><span class="swatch is-down"></span>Down</li>
+					<li><span class="swatch is-unknown"></span>Unknown</li>
+				</ul>
+				<button id="incidentsBtn" class="incidents-btn" type="button" aria-expanded="false" aria-controls="incidentsPanel">
+					Incidents
+				</button>
+			</div>
+		</header>
+
+		<main id="grid" class="grid" aria-live="polite">
+			<p class="grid__loading">Fetching service status…</p>
+		</main>
+
+		<aside id="incidentsPanel" class="panel" aria-label="Recent incidents" hidden>
+			<div class="panel__head">
+				<h2>Recent incidents</h2>
+				<button id="incidentsClose" class="panel__close" type="button" aria-label="Close">×</button>
+			</div>
+			<div id="incidentsList" class="panel__list"></div>
+		</aside>
+
+		<div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+
+		<div id="toasts" class="toasts" aria-live="assertive" aria-atomic="false"></div>
+
+		<script src="/app.js" type="module"></script>
 	</body>
 </html>

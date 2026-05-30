@@ -5,6 +5,7 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "cf-isupordown",
+	"main": "src/index.ts",
 	"compatibility_date": "2026-05-30",
 	"assets": {
 		// The path to the directory containing the `index.html` file to be served at `/`
@@ -16,6 +17,33 @@
 	"upload_source_maps": true,
 	"compatibility_flags": [
 		"nodejs_compat"
+	],
+	// Poll every minute and persist a snapshot to D1.
+	"triggers": {
+		"crons": [
+			"* * * * *"
+		]
+	},
+	// History/persistence store. Run `npx wrangler d1 create isup` and paste the
+	// returned id into `database_id` before deploying (a placeholder is fine for
+	// local `wrangler dev`, which uses a local SQLite simulation).
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "isup",
+			"database_id": "210df004-5ad3-42ab-ac14-5648860b0aac"
+		}
+	],
+	// Per-IP rate limiting for the public /api/* endpoints: 60 requests / 60s.
+	"ratelimits": [
+		{
+			"name": "API_RATE_LIMITER",
+			"namespace_id": "1001",
+			"simple": {
+				"limit": 60,
+				"period": 60
+			}
+		}
 	]
 	/**
 	 * Smart Placement

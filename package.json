@@ -5,9 +5,18 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "start": "wrangler dev"
+    "dev:cron": "wrangler dev --test-scheduled",
+    "start": "wrangler dev",
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "db:schema:local": "wrangler d1 execute isup --local --file=./schema.sql",
+    "db:schema:remote": "wrangler d1 execute isup --remote --file=./schema.sql"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.5.0"
   },
   "devDependencies": {
+    "typescript": "^5.7.0",
     "wrangler": "^4.95.0"
   }
 }

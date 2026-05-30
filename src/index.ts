@@ -1,0 +1,96 @@
+/**
+ * IsUp — service status heatmap Worker.
+ *
+ * Static assets (the frontend in /public) are served automatically by the
+ * Cloudflare runtime; this Worker handles the API and the cron.
+ *
+ *   - `scheduled` (cron, every 1m): resolve every service and persist a
+ *     snapshot + incident transitions to D1.
+ *   - `GET /api/status`: fast read of the persisted snapshot (with uptime).
+ *     Falls back to a live fan-out before the first cron run populates D1.
+ *   - `GET /api/incidents`: recent incident log.
+ */
+
+import { persistSnapshot, readSnapshot, recentIncidents, type ApiService } from "./db";
+import { SERVICES, type ServiceStatus } from "./services";
+import { resolveStatus } from "./sources";
+
+function json(body: unknown, init: ResponseInit = {}): Response {
+	return new Response(JSON.stringify(body), {
+		...init,
+		headers: {
+			"content-type": "application/json; charset=utf-8",
+			"cache-control": "public, max-age=30",
+			// Defense-in-depth (the _headers file doesn't apply to Worker responses).
+			"x-content-type-options": "nosniff",
+			"referrer-policy": "no-referrer",
+			...(init.headers ?? {}),
+		},
+	});
+}
+
+/** Resolve every service concurrently; failures become `unknown`. */
+async function resolveAll(): Promise<ServiceStatus[]> {
+	const settled = await Promise.allSettled(SERVICES.map(resolveStatus));
+	return settled.map((outcome, i) => {
+		if (outcome.status === "fulfilled") return outcome.value;
+		const svc = SERVICES[i];
+		return { id: svc.id, name: svc.name, category: svc.category, weight: svc.weight, status: "unknown", description: "Unreachable" };
+	});
+}
+
+/** Cold-start fallback: live snapshot shaped like the persisted one (no history yet). */
+function liveSnapshot(statuses: ServiceStatus[]): { updatedAt: number; services: ApiService[] } {
+	return {
+		updatedAt: Date.now(),
+		services: statuses.map((s) => ({ ...s, description: s.description ?? "", uptime: { day: 1, week: 1 } })),
+	};
+}
+
+export default {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+		const url = new URL(request.url);
+
+		if (url.pathname.startsWith("/api/")) {
+			// Per-IP rate limit. Shared NAT IPs may share a bucket; 60/min is
+			// generous enough for the dashboard's ~1 poll / 45s that this is fine.
+			const ip = request.headers.get("cf-connecting-ip") ?? "anon";
+			const { success } = await env.API_RATE_LIMITER.limit({ key: ip });
+			if (!success) {
+				return json({ error: "Rate limit exceeded" }, { status: 429, headers: { "retry-after": "60", "cache-control": "no-store" } });
+			}
+		}
+
+		if (url.pathname === "/api/status") {
+			// Cache per-colo so the (potentially expensive) snapshot — especially
+			// the cold-start live fan-out — is computed at most once per TTL.
+			const cache = caches.default;
+			const cacheKey = new Request(new URL("/api/status", url.origin).toString(), { method: "GET" });
+			const hit = await cache.match(cacheKey);
+			if (hit) return hit;
+
+			const snapshot = (await readSnapshot(env.DB)) ?? liveSnapshot(await resolveAll());
+			const resp = json(snapshot);
+			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			return resp;
+		}
+
+		if (url.pathname === "/api/incidents") {
+			const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 25));
+			return json({ incidents: await recentIncidents(env.DB, limit) });
+		}
+
+		return new Response("Not found", { status: 404 });
+	},
+
+	async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+		try {
+			const statuses = await resolveAll();
+			await persistSnapshot(env.DB, statuses);
+			console.log(`IsUp cron: persisted ${statuses.length} services`);
+		} catch (err) {
+			console.error("IsUp cron failed:", err instanceof Error ? err.stack || err.message : String(err));
+			throw err;
+		}
+	},
+} satisfies ExportedHandler<Env>;
