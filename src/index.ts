@@ -69,9 +69,14 @@ export default {
 			const hit = await cache.match(cacheKey);
 			if (hit) return hit;
 
-			const snapshot = (await readSnapshot(env.DB)) ?? liveSnapshot(await resolveAll());
+			const fromDb = await readSnapshot(env.DB);
+			const snapshot = fromDb ?? liveSnapshot(await resolveAll());
 			const resp = json(snapshot);
-			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			// Cache D1-backed responses, but skip a degenerate cold-start fallback
+			// (everything `unknown`, e.g. a cold fan-out that timed out) so the next
+			// request retries instead of serving the bad snapshot for the full TTL.
+			const cacheable = fromDb !== null || snapshot.services.some((s) => s.status !== "unknown");
+			if (cacheable) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;
 		}
 

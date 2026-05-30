@@ -78,6 +78,12 @@ export const SERVICES: Service[] = [
 	// --- AI ---
 	{ id: "openai", name: "OpenAI", category: "AI", weight: 8, source: { type: "statuspage", base: "https://status.openai.com" } },
 	{ id: "anthropic", name: "Anthropic", category: "AI", weight: 7, source: { type: "statuspage", base: "https://status.claude.com" } },
+	{ id: "groq", name: "Groq", category: "AI", weight: 5, source: { type: "statuspage", base: "https://groqstatus.com" } },
+	{ id: "elevenlabs", name: "ElevenLabs", category: "AI", weight: 5, source: { type: "statuspage", base: "https://status.elevenlabs.io" } },
+	{ id: "cohere", name: "Cohere", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.cohere.com" } },
+	{ id: "replicate", name: "Replicate", category: "AI", weight: 4, source: { type: "statuspage", base: "https://www.replicatestatus.com" } },
+	{ id: "pinecone", name: "Pinecone", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.pinecone.io" } },
+	{ id: "runway", name: "Runway", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.runwayml.com" } },
 
 	// --- Payments ---
 	{ id: "stripe", name: "Stripe", category: "Payments", weight: 7, source: { type: "statuspage", base: "https://www.stripestatus.com" } },
@@ -106,4 +112,7 @@ export const SERVICES: Service[] = [
 	// --- Gaming & Entertainment ---
 	{ id: "twitch", name: "Twitch", category: "Gaming & Entertainment", weight: 7, source: { type: "statuspage", base: "https://status.twitch.com" } },
 	{ id: "epicgames", name: "Epic Games", category: "Gaming & Entertainment", weight: 6, source: { type: "statuspage", base: "https://status.epicgames.com" } },
+	// Netflix has no public status API (its "is-netflix-down" page is JS-rendered),
+	// so we fall back to a reachability ping of the main site.
+	{ id: "netflix", name: "Netflix", category: "Gaming & Entertainment", weight: 9, source: { type: "http", url: "https://www.netflix.com" } },
 ];
