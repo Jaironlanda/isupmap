@@ -1,4 +1,4 @@
-// IsUp frontend: poll /api/status, render a stock-map style treemap, toast on flips.
+// isUpMap frontend: poll /api/status, render a stock-map style treemap, toast on flips.
 
 const POLL_INTERVAL_MS = 45_000;
 const TOAST_TIMEOUT_MS = 8_000;
@@ -788,7 +788,11 @@ const themeBtn = document.getElementById("themeBtn");
 
 function applyTheme() {
 	document.documentElement.dataset.theme = prefs.theme;
-	themeBtn.textContent = prefs.theme === "light" ? "🌙" : "☀️";
+	// Rebuild the placeholder each time: lucide.createIcons() swaps <i> for <svg>,
+	// so we re-insert a fresh <i> and let lucide render the new glyph.
+	const icon = prefs.theme === "light" ? "moon" : "sun";
+	themeBtn.innerHTML = `<i data-lucide="${icon}"></i>`;
+	lucide.createIcons({ nodes: [themeBtn.querySelector("i[data-lucide]")] });
 	themeBtn.title = prefs.theme === "light" ? "Switch to dark theme" : "Switch to light theme";
 }
 
@@ -812,7 +816,7 @@ function worstStatus(services) {
 
 function updateChrome(services) {
 	const issues = services.filter((s) => s.status === "down" || s.status === "degraded").length;
-	document.title = issues > 0 ? `(${issues}) IsUp — issues` : "IsUp — Service Status";
+	document.title = issues > 0 ? `(${issues}) isUpMap — issues` : "isUpMap — Service Status";
 
 	const color = { up: "#40c057", degraded: "#f0b429", down: "#fa5252" }[worstStatus(services)];
 	const canvas = document.createElement("canvas");
@@ -1032,6 +1036,7 @@ window.addEventListener("resize", () => {
 	resizeTimer = setTimeout(renderView, 150);
 });
 
+lucide.createIcons();
 applyTheme();
 syncProblemsBtn();
 syncNotifyToggle();

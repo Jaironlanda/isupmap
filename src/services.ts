@@ -1,5 +1,5 @@
 /**
- * Curated list of services shown on the IsUp heatmap.
+ * Curated list of services shown on the isUpMap heatmap.
  *
  * Each service declares a `source` describing how its current status is
  * resolved (see src/sources.ts):

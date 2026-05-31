@@ -1,5 +1,5 @@
 /**
- * D1 persistence layer for IsUp.
+ * D1 persistence layer for isUpMap.
  *
  * The cron handler calls {@link persistSnapshot} each run; the HTTP API reads
  * via {@link readSnapshot} / {@link recentIncidents}. Only `degraded` and

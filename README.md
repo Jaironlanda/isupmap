@@ -1,5 +1,6 @@
-# IsUp — Service Status Heatmap
+# isUpMap — Service Status Heatmap
 
+**Live: [isUpMap](https://isupmap.com)** (Official)
 **Live: [map.warmindex.com](https://map.warmindex.com)**
 
 A live **up / down heatmap** for 40+ popular internet services, rendered as a

@@ -1,5 +1,5 @@
 /**
- * IsUp — service status heatmap Worker.
+ * isUpMap — service status heatmap Worker.
  *
  * Static assets (the frontend in /public) are served automatically by the
  * Cloudflare runtime; this Worker handles the API and the cron.
@@ -107,12 +107,12 @@ export default {
 			const when = new Date(controller.scheduledTime);
 			if (when.getUTCHours() === 3 && when.getUTCMinutes() < 5) {
 				const pruned = await pruneIncidents(env.DB);
-				console.log(`IsUp cron: persisted ${statuses.length} services; pruned ${pruned} old incidents`);
+				console.log(`isUpMap cron: persisted ${statuses.length} services; pruned ${pruned} old incidents`);
 			} else {
-				console.log(`IsUp cron: persisted ${statuses.length} services`);
+				console.log(`isUpMap cron: persisted ${statuses.length} services`);
 			}
 		} catch (err) {
-			console.error("IsUp cron failed:", err instanceof Error ? err.stack || err.message : String(err));
+			console.error("isUpMap cron failed:", err instanceof Error ? err.stack || err.message : String(err));
 			throw err;
 		}
 	},
