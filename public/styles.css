@@ -44,6 +44,7 @@ body {
 	display: flex;
 	flex-direction: column;
 	height: 100vh;
+	height: 100dvh; /* track the dynamic viewport so mobile browser chrome doesn't clip */
 	overflow: hidden;
 }
 
@@ -739,8 +740,83 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.toast {
+	.toast,
+	.modal__box {
 		animation: none;
+	}
+}
+
+/* --- Mobile / small screens --- */
+@media (max-width: 640px) {
+	.header {
+		gap: 0.5rem;
+		padding: 0.5rem 0.7rem;
+	}
+	.header__subtitle {
+		display: none;
+	}
+	.header__meta {
+		gap: 0.5rem 0.6rem;
+		flex-wrap: wrap;
+		justify-content: flex-start;
+	}
+	.legend {
+		display: none; /* status colors are shown in the detail sheet instead */
+	}
+	.toolbar {
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+	.tbar-btn {
+		padding: 0.3rem 0.55rem;
+		font-size: 0.74rem;
+	}
+	.kbd {
+		display: none; /* keyboard shortcut isn't relevant on touch */
+	}
+
+	/* Detail "info" becomes a bottom sheet. */
+	.modal {
+		align-items: flex-end;
+		padding: 0;
+	}
+	.modal__box {
+		width: 100%;
+		max-width: none;
+		max-height: 88vh;
+		max-height: 88dvh;
+		border-radius: 16px 16px 0 0;
+		padding-top: 1.5rem;
+		animation: sheet-up 0.22s ease;
+	}
+	.modal__box::before {
+		content: "";
+		position: absolute;
+		top: 0.55rem;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 40px;
+		height: 4px;
+		border-radius: 2px;
+		background: var(--border);
+	}
+	.detail__actions {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.6rem;
+	}
+	.detail__visit {
+		justify-content: center;
+		padding: 0.6rem;
+	}
+}
+
+@keyframes sheet-up {
+	from {
+		transform: translateY(100%);
+	}
+	to {
+		transform: translateY(0);
 	}
 }
 
@@ -885,14 +961,28 @@ body {
 	gap: 0.5rem;
 	margin-bottom: 0.6rem;
 }
-.detail__link {
-	color: var(--up-hi);
+.detail__visit {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	border: 1px solid var(--border);
+	border-radius: 7px;
+	padding: 0.45rem 0.8rem;
+	color: var(--text);
 	text-decoration: none;
-	font-size: 0.8rem;
+	font-size: 0.82rem;
 	font-weight: 600;
+	white-space: nowrap;
 }
-.detail__link:hover {
-	text-decoration: underline;
+.detail__visit:hover {
+	border-color: var(--muted);
+	background: rgba(127, 127, 127, 0.12);
+}
+
+.detail__host {
+	margin: 0.4rem 0 0;
+	color: var(--muted);
+	font-size: 0.74rem;
 }
 
 .detail__subhead {

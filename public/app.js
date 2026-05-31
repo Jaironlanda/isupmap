@@ -402,8 +402,13 @@ function hideTooltip() {
 	tooltipEl.hidden = true;
 }
 
+// Hover tooltips only on hover-capable devices; touch devices tap a tile to
+// open the detail sheet instead (no hover state to rely on).
+const canHover = window.matchMedia?.("(hover: hover) and (pointer: fine)").matches ?? true;
+
 // Delegated hover handling on the grid (tiles are recreated every poll).
 gridEl.addEventListener("mousemove", (e) => {
+	if (!canHover) return;
 	const tile = e.target.closest(".tile");
 	if (tile && tile._svc) {
 		if (tooltipEl.hidden || tooltipEl._for !== tile._svc.id) {
@@ -910,9 +915,10 @@ function renderDetailHeader(svc) {
 			${d.components && d.components.total ? `<div><span>Components</span><strong>${d.components.operational}/${d.components.total}</strong></div>` : ""}
 		</div>
 		<div class="detail__actions">
-			${host ? `<a class="detail__link" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(host)} ↗</a>` : "<span></span>"}
+			${d.url ? `<a class="detail__visit" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer">Visit status page ↗</a>` : "<span></span>"}
 			<button id="detailCopy" class="link-btn" type="button">Copy link</button>
 		</div>
+		${host ? `<div class="detail__host">${escapeHtml(host)}</div>` : ""}
 		<h3 class="detail__subhead">Incident history</h3>
 		<div class="detail__incidents"></div>`;
 	// Set the logo via CSSOM (avoids inline style attributes under our CSP).
