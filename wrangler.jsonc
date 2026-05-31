@@ -18,10 +18,10 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
-	// Poll every minute and persist a snapshot to D1.
+	// Poll every 5 minutes and persist a snapshot to D1.
 	"triggers": {
 		"crons": [
-			"* * * * *"
+			"*/5 * * * *"
 		]
 	},
 	// History/persistence store. Run `npx wrangler d1 create isup` and paste the

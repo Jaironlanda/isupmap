@@ -11,6 +11,8 @@ import type { ServiceStatus, StatusLevel } from "./services";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
+/** Resolved incidents older than this are pruned by the retention sweep. */
+const RETENTION_MS = 90 * DAY_MS;
 
 /** Statuses that constitute an ongoing incident. */
 function isIncident(status: StatusLevel): boolean {
@@ -199,6 +201,12 @@ export async function recentIncidents(db: D1Database, limit = 25): Promise<Incid
 		startedAt: r.started_at,
 		endedAt: r.ended_at,
 	}));
+}
+
+/** Delete resolved incidents older than the retention window. Returns rows removed. */
+export async function pruneIncidents(db: D1Database, now = Date.now()): Promise<number> {
+	const res = await db.prepare("DELETE FROM incidents WHERE ended_at IS NOT NULL AND ended_at < ?").bind(now - RETENTION_MS).run();
+	return res.meta.changes ?? 0;
 }
 
 function safeParse(json: string): unknown {

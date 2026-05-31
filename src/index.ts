@@ -11,7 +11,7 @@
  *   - `GET /api/incidents`: recent incident log.
  */
 
-import { persistSnapshot, readSnapshot, recentIncidents, type ApiService } from "./db";
+import { persistSnapshot, pruneIncidents, readSnapshot, recentIncidents, type ApiService } from "./db";
 import { SERVICES, type ServiceStatus } from "./services";
 import { resolveStatus } from "./sources";
 
@@ -97,11 +97,20 @@ export default {
 		return new Response("Not found", { status: 404 });
 	},
 
-	async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+	async scheduled(controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
 		try {
 			const statuses = await resolveAll();
 			await persistSnapshot(env.DB, statuses);
-			console.log(`IsUp cron: persisted ${statuses.length} services`);
+
+			// Retention sweep once a day (~03:00 UTC): with a 5-minute cron, only the
+			// :00 firing of hour 3 falls in this window, so it runs exactly once.
+			const when = new Date(controller.scheduledTime);
+			if (when.getUTCHours() === 3 && when.getUTCMinutes() < 5) {
+				const pruned = await pruneIncidents(env.DB);
+				console.log(`IsUp cron: persisted ${statuses.length} services; pruned ${pruned} old incidents`);
+			} else {
+				console.log(`IsUp cron: persisted ${statuses.length} services`);
+			}
 		} catch (err) {
 			console.error("IsUp cron failed:", err instanceof Error ? err.stack || err.message : String(err));
 			throw err;
