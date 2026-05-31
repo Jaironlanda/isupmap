@@ -82,7 +82,16 @@ export default {
 
 		if (url.pathname === "/api/incidents") {
 			const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 25));
-			return json({ incidents: await recentIncidents(env.DB, limit) });
+			// Cache per-colo keyed by the clamped limit (so arbitrary query strings
+			// don't fragment the cache). Incidents change rarely → ~1 read/min/colo.
+			const cache = caches.default;
+			const cacheKey = new Request(new URL(`/api/incidents?limit=${limit}`, url.origin).toString(), { method: "GET" });
+			const hit = await cache.match(cacheKey);
+			if (hit) return hit;
+
+			const resp = json({ incidents: await recentIncidents(env.DB, limit) });
+			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			return resp;
 		}
 
 		return new Response("Not found", { status: 404 });

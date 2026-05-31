@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS incidents (
 CREATE INDEX IF NOT EXISTS idx_incidents_service ON incidents (service_id, started_at);
 -- Fast lookup of the open incident per service.
 CREATE INDEX IF NOT EXISTS idx_incidents_open ON incidents (service_id) WHERE ended_at IS NULL;
+-- Reverse-scan the newest incidents for /api/incidents (ORDER BY started_at LIMIT).
+CREATE INDEX IF NOT EXISTS idx_incidents_started ON incidents (started_at);
+-- Bound the /api/status uptime window query (ended_at >= ? and IS NULL branches).
+CREATE INDEX IF NOT EXISTS idx_incidents_ended ON incidents (ended_at);
 
 -- Small key/value store (e.g. last cron run timestamp).
 CREATE TABLE IF NOT EXISTS meta (

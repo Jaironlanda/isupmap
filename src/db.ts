@@ -63,8 +63,13 @@ export interface ApiService {
  * All writes run in a single batched (transactional) call.
  */
 export async function persistSnapshot(db: D1Database, statuses: ServiceStatus[], now = Date.now()): Promise<void> {
-	const prevRows = await db.prepare("SELECT service_id, status FROM current").all<{ service_id: string; status: StatusLevel }>();
-	const prev = new Map(prevRows.results.map((r) => [r.service_id, r.status]));
+	// Transition detection only needs to know which services currently have an
+	// OPEN incident. Reading those (0–few rows, served by idx_incidents_open) is
+	// far cheaper than scanning every `current` row each minute.
+	const openRows = await db
+		.prepare("SELECT service_id, status FROM incidents WHERE ended_at IS NULL")
+		.all<{ service_id: string; status: StatusLevel }>();
+	const open = new Map(openRows.results.map((r) => [r.service_id, r.status]));
 
 	const upsertCurrent = db.prepare(
 		`INSERT INTO current (service_id, name, category, weight, status, description, details_json, updated_at)
@@ -87,15 +92,15 @@ export async function persistSnapshot(db: D1Database, statuses: ServiceStatus[],
 			upsertCurrent.bind(s.id, s.name, s.category, s.weight, s.status, s.description ?? null, s.details ? JSON.stringify(s.details) : null, now),
 		);
 
-		const before = prev.get(s.id);
-		const wasIncident = before != null && isIncident(before);
+		const openStatus = open.get(s.id); // undefined unless an incident is open
+		const wasIncident = openStatus != null;
 		const nowIncident = isIncident(s.status);
 
 		if (!wasIncident && nowIncident) {
 			batch.push(openIncident.bind(s.id, s.status, s.description ?? null, now));
 		} else if (wasIncident && !nowIncident) {
 			batch.push(closeIncident.bind(now, s.id));
-		} else if (wasIncident && nowIncident && before !== s.status) {
+		} else if (wasIncident && nowIncident && openStatus !== s.status) {
 			batch.push(updateIncident.bind(s.status, s.description ?? null, s.id));
 		}
 	}
