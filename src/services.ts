@@ -74,6 +74,18 @@ export const SERVICES: Service[] = [
 	{ id: "render", name: "Render", category: "Developer & Cloud", weight: 3, source: { type: "statuspage", base: "https://status.render.com" } },
 	// AWS publishes an RSS feed rather than a Statuspage site — exercises the RSS path.
 	{ id: "aws", name: "AWS", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://status.aws.amazon.com/rss/all.rss" } },
+	{ id: "supabase", name: "Supabase", category: "Developer & Cloud", weight: 6, source: { type: "statuspage", base: "https://status.supabase.com" } },
+	{ id: "flyio", name: "Fly.io", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://status.flyio.net" } },
+	// Railway uses Betterstack (not Atlassian Statuspage) — RSS is the reliable path.
+	{ id: "railway", name: "Railway", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://railway.betteruptime.com/feed.rss" } },
+	// Neon uses status.io — RSS is the reliable path.
+	{ id: "neon", name: "Neon", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://neonstatus.com/pages/6878fc85709daa75be6c7e3c/rss" } },
+	{ id: "planetscale", name: "PlanetScale", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://www.planetscalestatus.com" } },
+	// Bunny.net CDN
+	{ id: "bunny", name: "Bunny.net", category: "Developer & Cloud", weight: 3, source: { type: "statuspage", base: "https://status.bunny.net" } },
+	// Auth0's Statuspage lives at auth0.statuspage.io (status.auth0.com lacks the JSON API).
+	{ id: "auth0", name: "Auth0", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://auth0.statuspage.io" } },
+	{ id: "clerk", name: "Clerk", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.clerk.com" } },
 
 	// --- AI ---
 	{ id: "openai", name: "OpenAI", category: "AI", weight: 8, source: { type: "statuspage", base: "https://status.openai.com" } },
@@ -87,12 +99,22 @@ export const SERVICES: Service[] = [
 	{ id: "replicate", name: "Replicate", category: "AI", weight: 4, source: { type: "statuspage", base: "https://www.replicatestatus.com" } },
 	{ id: "pinecone", name: "Pinecone", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.pinecone.io" } },
 	{ id: "runway", name: "Runway", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.runwayml.com" } },
+	// Hugging Face uses Betterstack — RSS is the reliable path.
+	{ id: "huggingface", name: "Hugging Face", category: "AI", weight: 7, source: { type: "rss", url: "https://status.huggingface.co/feed.rss" } },
+	// Together AI uses Betterstack — RSS is the reliable path.
+	{ id: "togetherai", name: "Together AI", category: "AI", weight: 5, source: { type: "rss", url: "https://status.together.ai/feed.rss" } },
+	// Perplexity uses Instatus — RSS feed confirmed working.
+	{ id: "perplexity", name: "Perplexity", category: "AI", weight: 6, source: { type: "rss", url: "https://status.perplexity.com/default/history.rss" } },
+	{ id: "stability", name: "Stability AI", category: "AI", weight: 5, source: { type: "statuspage", base: "https://status.stability.ai" } },
 
 	// --- Payments ---
 	{ id: "stripe", name: "Stripe", category: "Payments", weight: 7, source: { type: "statuspage", base: "https://www.stripestatus.com" } },
 	{ id: "coinbase", name: "Coinbase", category: "Payments", weight: 5, source: { type: "statuspage", base: "https://status.coinbase.com" } },
 	{ id: "shopify", name: "Shopify", category: "Payments", weight: 6, source: { type: "statuspage", base: "https://www.shopifystatus.com" } },
 	{ id: "plaid", name: "Plaid", category: "Payments", weight: 4, source: { type: "statuspage", base: "https://status.plaid.com" } },
+	{ id: "paddle", name: "Paddle", category: "Payments", weight: 3, source: { type: "statuspage", base: "https://paddlestatus.com" } },
+	// Lemon Squeezy uses Oh Dear for status — RSS is the reliable path.
+	{ id: "lemonsqueezy", name: "Lemon Squeezy", category: "Payments", weight: 3, source: { type: "rss", url: "https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss" } },
 
 	// --- Communication ---
 	{ id: "discord", name: "Discord", category: "Communication", weight: 6, source: { type: "statuspage", base: "https://discordstatus.com" } },
@@ -100,6 +122,8 @@ export const SERVICES: Service[] = [
 	{ id: "zoom", name: "Zoom", category: "Communication", weight: 6, source: { type: "statuspage", base: "https://www.zoomstatus.com" } },
 	{ id: "twilio", name: "Twilio", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.twilio.com" } },
 	{ id: "sendgrid", name: "SendGrid", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.sendgrid.com" } },
+	{ id: "resend", name: "Resend", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://resend-status.com" } },
+	{ id: "mailgun", name: "Mailgun", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.mailgun.com" } },
 
 	// --- Productivity & Media ---
 	{ id: "atlassian", name: "Atlassian", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.atlassian.com" } },
@@ -111,6 +135,9 @@ export const SERVICES: Service[] = [
 	{ id: "squarespace", name: "Squarespace", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.squarespace.com" } },
 	// Wikipedia has no public status feed — a plain reachability ping demonstrates the HTTP path.
 	{ id: "wikipedia", name: "Wikipedia", category: "Productivity & Media", weight: 7, source: { type: "http", url: "https://www.wikipedia.org" } },
+	{ id: "linear", name: "Linear", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://linearstatus.com" } },
+	{ id: "notion", name: "Notion", category: "Productivity & Media", weight: 7, source: { type: "statuspage", base: "https://www.notion-status.com" } },
+	{ id: "cloudinary", name: "Cloudinary", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.cloudinary.com" } },
 
 	// --- Gaming & Entertainment ---
 	{ id: "twitch", name: "Twitch", category: "Gaming & Entertainment", weight: 7, source: { type: "statuspage", base: "https://status.twitch.com" } },
@@ -118,4 +145,6 @@ export const SERVICES: Service[] = [
 	// Netflix has no public status API (its "is-netflix-down" page is JS-rendered),
 	// so we fall back to a reachability ping of the main site.
 	{ id: "netflix", name: "Netflix", category: "Gaming & Entertainment", weight: 9, source: { type: "http", url: "https://www.netflix.com" } },
+	// Roblox uses status.io — RSS is the reliable path.
+	{ id: "roblox", name: "Roblox", category: "Gaming & Entertainment", weight: 8, source: { type: "rss", url: "https://status.roblox.com/pages/59db90dbcdeb2f04dadcf16d/rss" } },
 ];

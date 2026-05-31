@@ -70,6 +70,16 @@ export default {
 			if (hit) return hit;
 
 			const fromDb = await readSnapshot(env.DB);
+			// Merge: any service added to SERVICES but not yet persisted by the cron
+			// appears immediately as "unknown" rather than being invisible.
+			if (fromDb) {
+				const dbIds = new Set(fromDb.services.map((s) => s.id));
+				for (const svc of SERVICES) {
+					if (!dbIds.has(svc.id)) {
+						fromDb.services.push({ id: svc.id, name: svc.name, category: svc.category, weight: svc.weight, status: "unknown", description: "Pending first check", uptime: { day: 1, week: 1 } });
+					}
+				}
+			}
 			const snapshot = fromDb ?? liveSnapshot(await resolveAll());
 			const resp = json(snapshot);
 			// Cache D1-backed responses, but skip a degenerate cold-start fallback
