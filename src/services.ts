@@ -78,6 +78,9 @@ export const SERVICES: Service[] = [
 	// --- AI ---
 	{ id: "openai", name: "OpenAI", category: "AI", weight: 8, source: { type: "statuspage", base: "https://status.openai.com" } },
 	{ id: "anthropic", name: "Anthropic", category: "AI", weight: 7, source: { type: "statuspage", base: "https://status.claude.com" } },
+	// status.x.ai's Statuspage JSON sits behind a Cloudflare bot challenge (403),
+	// but its RSS feed is open — so resolve xAI via the feed.
+	{ id: "xai", name: "xAI", category: "AI", weight: 6, source: { type: "rss", url: "https://status.x.ai/feed.xml" } },
 	{ id: "groq", name: "Groq", category: "AI", weight: 5, source: { type: "statuspage", base: "https://groqstatus.com" } },
 	{ id: "elevenlabs", name: "ElevenLabs", category: "AI", weight: 5, source: { type: "statuspage", base: "https://status.elevenlabs.io" } },
 	{ id: "cohere", name: "Cohere", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.cohere.com" } },

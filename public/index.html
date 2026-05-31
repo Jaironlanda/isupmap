@@ -5,6 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>IsUp — Service Status Heatmap</title>
 		<meta name="description" content="Live up/down heatmap for popular services." />
+		<link rel="icon" id="favicon" href="data:," />
 		<link rel="stylesheet" href="/styles.css" />
 	</head>
 	<body>
@@ -22,6 +23,7 @@
 					<li><span class="swatch is-unknown"></span>Unknown</li>
 				</ul>
 				<div class="toolbar">
+					<button id="themeBtn" class="tbar-btn tbar-btn--icon" type="button" title="Toggle theme">☀️</button>
 					<button id="searchBtn" class="tbar-btn" type="button" aria-haspopup="dialog" title="Search (⌘K)">
 						Search <span class="kbd">⌘K</span>
 					</button>
@@ -53,6 +55,10 @@
 				<span id="customizeCount"></span>
 				<button id="customizeReset" class="link-btn" type="button">Reset</button>
 			</div>
+			<label class="cz-toggle">
+				<input id="notifyToggle" type="checkbox" />
+				<span>🔔 Desktop notifications on status changes</span>
+			</label>
 			<div id="customizeList" class="panel__list"></div>
 		</aside>
 
@@ -68,6 +74,13 @@
 					aria-label="Search services or run a command"
 				/>
 				<ul id="paletteResults" class="palette__results" role="listbox"></ul>
+			</div>
+		</div>
+
+		<div id="detail" class="modal" hidden>
+			<div class="modal__box" role="dialog" aria-modal="true" aria-label="Service detail">
+				<button class="modal__close" type="button" data-close aria-label="Close">×</button>
+				<div id="detailBody" class="modal__body"></div>
 			</div>
 		</div>
 

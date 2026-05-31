@@ -13,6 +13,18 @@
 	--down: #c92a2a;
 	--down-hi: #fa5252;
 	--unknown: #495057;
+
+	--grid-bg: #05070b;
+}
+
+/* Light theme: override the chrome (status fills stay the same). */
+:root[data-theme="light"] {
+	--bg: #f5f7fa;
+	--panel: #ffffff;
+	--border: #d0d7de;
+	--text: #1f2328;
+	--muted: #59636e;
+	--grid-bg: #d8dee6;
 }
 
 * {
@@ -428,7 +440,7 @@ body {
 	flex: 1 1 auto;
 	position: relative;
 	overflow: hidden;
-	background: #05070b;
+	background: var(--grid-bg);
 }
 
 .grid__loading,
@@ -719,4 +731,158 @@ body {
 	.toast {
 		animation: none;
 	}
+}
+
+/* --- Theme button + notify toggle --- */
+.tbar-btn--icon {
+	padding: 0.3rem 0.5rem;
+	font-size: 0.9rem;
+	line-height: 1;
+}
+
+.cz-toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.55rem 1rem;
+	border-bottom: 1px solid var(--border);
+	font-size: 0.82rem;
+	cursor: pointer;
+}
+.cz-toggle input {
+	accent-color: var(--up-hi);
+	cursor: pointer;
+}
+
+/* --- Service detail modal --- */
+.modal {
+	position: fixed;
+	inset: 0;
+	z-index: 85;
+	background: rgba(0, 0, 0, 0.55);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+}
+.modal[hidden] {
+	display: none;
+}
+
+.modal__box {
+	position: relative;
+	width: min(520px, 100%);
+	max-height: 85vh;
+	overflow-y: auto;
+	background: var(--panel);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+	padding: 1.2rem 1.3rem;
+}
+
+.modal__close {
+	position: absolute;
+	top: 0.6rem;
+	right: 0.7rem;
+	background: none;
+	border: none;
+	color: var(--muted);
+	font-size: 1.5rem;
+	line-height: 1;
+	cursor: pointer;
+}
+.modal__close:hover {
+	color: var(--text);
+}
+
+.detail__head {
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+	padding-right: 1.5rem;
+}
+.detail__head h2 {
+	margin: 0;
+	font-size: 1.2rem;
+}
+.detail__head .dot {
+	width: 0.7rem;
+	height: 0.7rem;
+	border-radius: 50%;
+}
+.detail__head .dot.is-up {
+	background: var(--up-hi);
+}
+.detail__head .dot.is-degraded {
+	background: var(--degraded-hi);
+}
+.detail__head .dot.is-down {
+	background: var(--down-hi);
+}
+.detail__head .dot.is-unknown {
+	background: var(--unknown);
+}
+
+.detail__desc {
+	color: var(--muted);
+	font-size: 0.88rem;
+	margin: 0.5rem 0 0.8rem;
+}
+
+.detail__metrics {
+	display: flex;
+	gap: 0.6rem;
+	margin: 0.6rem 0 0.9rem;
+}
+.detail__metrics > div {
+	flex: 1;
+	background: rgba(127, 127, 127, 0.1);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 0.55rem 0.6rem;
+	text-align: center;
+}
+.detail__metrics span {
+	display: block;
+	font-size: 0.68rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--muted);
+	margin-bottom: 0.2rem;
+}
+.detail__metrics strong {
+	font-size: 1.05rem;
+	font-variant-numeric: tabular-nums;
+}
+
+.detail__actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-bottom: 0.6rem;
+}
+.detail__link {
+	color: var(--up-hi);
+	text-decoration: none;
+	font-size: 0.8rem;
+	font-weight: 600;
+}
+.detail__link:hover {
+	text-decoration: underline;
+}
+
+.detail__subhead {
+	margin: 0.6rem 0 0.5rem;
+	font-size: 0.78rem;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--muted);
+}
+
+.detail__incidents {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
 }

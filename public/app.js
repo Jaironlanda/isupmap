@@ -32,15 +32,23 @@ const PREFS_KEY = "isup:prefs";
 function loadPrefs() {
 	try {
 		const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
-		return { hidden: new Set(Array.isArray(raw.hidden) ? raw.hidden : []), problemsOnly: !!raw.problemsOnly };
+		return {
+			hidden: new Set(Array.isArray(raw.hidden) ? raw.hidden : []),
+			problemsOnly: !!raw.problemsOnly,
+			theme: raw.theme === "light" ? "light" : "dark",
+			notify: !!raw.notify,
+		};
 	} catch {
-		return { hidden: new Set(), problemsOnly: false };
+		return { hidden: new Set(), problemsOnly: false, theme: "dark", notify: false };
 	}
 }
 
 function savePrefs() {
 	try {
-		localStorage.setItem(PREFS_KEY, JSON.stringify({ hidden: [...prefs.hidden], problemsOnly: prefs.problemsOnly }));
+		localStorage.setItem(
+			PREFS_KEY,
+			JSON.stringify({ hidden: [...prefs.hidden], problemsOnly: prefs.problemsOnly, theme: prefs.theme, notify: prefs.notify }),
+		);
 	} catch {
 		/* storage unavailable (private mode); prefs simply won't persist */
 	}
@@ -80,7 +88,9 @@ async function poll() {
 		latest = data.services;
 		renderView();
 		updateTimestamp(data.updatedAt);
+		updateChrome(latest);
 		detectChanges(latest);
+		handleDeepLinkOnce();
 	} catch (err) {
 		if (!latest) {
 			gridEl.innerHTML = `<p class="grid__error">Couldn't load status (${escapeHtml(String(err.message ?? err))}). Retrying…</p>`;
@@ -392,6 +402,7 @@ function detectChanges(services) {
 			// Only toast on meaningful operational transitions, not unknown<->x noise.
 			if (prev.status === "unknown" || svc.status === "unknown") continue;
 			showToast(svc, prev.status);
+			maybeNotify(svc, prev.status);
 		}
 	}
 	previous = current;
@@ -573,6 +584,7 @@ customizeClose.addEventListener("click", () => toggleCustomize(false));
 function closePanels({ except } = {}) {
 	if (except !== "incidents") toggleIncidentsClosed();
 	if (except !== "customize") customizePanel.hidden = true;
+	closeDetail();
 }
 // Avoid recursion: close incidents without re-triggering closePanels.
 function toggleIncidentsClosed() {
@@ -626,6 +638,8 @@ function commandItems() {
 		},
 		{ label: "Customize services", hint: "view", run: () => toggleCustomize(true) },
 		{ label: "Recent incidents", hint: "view", run: () => toggleIncidents(true) },
+		{ label: prefs.theme === "light" ? "Switch to dark theme" : "Switch to light theme", hint: "theme", run: toggleTheme },
+		{ label: prefs.notify ? "Disable desktop notifications" : "Enable desktop notifications", hint: "alerts", run: () => setNotify(!prefs.notify) },
 		{ label: "Show all services", hint: "reset", run: () => customizeReset.click() },
 	];
 }
@@ -730,7 +744,228 @@ function focusService(id) {
 	}, 2600);
 }
 
-// Global keyboard shortcuts.
+// --- Theme ----------------------------------------------------------------
+
+const themeBtn = document.getElementById("themeBtn");
+
+function applyTheme() {
+	document.documentElement.dataset.theme = prefs.theme;
+	themeBtn.textContent = prefs.theme === "light" ? "🌙" : "☀️";
+	themeBtn.title = prefs.theme === "light" ? "Switch to dark theme" : "Switch to light theme";
+}
+
+function toggleTheme() {
+	prefs.theme = prefs.theme === "light" ? "dark" : "light";
+	savePrefs();
+	applyTheme();
+}
+
+themeBtn.addEventListener("click", toggleTheme);
+
+// --- Favicon + document title reflect overall state -----------------------
+
+const faviconEl = document.getElementById("favicon");
+
+function worstStatus(services) {
+	if (services.some((s) => s.status === "down")) return "down";
+	if (services.some((s) => s.status === "degraded")) return "degraded";
+	return "up";
+}
+
+function updateChrome(services) {
+	const issues = services.filter((s) => s.status === "down" || s.status === "degraded").length;
+	document.title = issues > 0 ? `(${issues}) IsUp — issues` : "IsUp — Service Status";
+
+	const color = { up: "#40c057", degraded: "#f0b429", down: "#fa5252" }[worstStatus(services)];
+	const canvas = document.createElement("canvas");
+	canvas.width = canvas.height = 32;
+	const ctx = canvas.getContext("2d");
+	ctx.fillStyle = color;
+	ctx.beginPath();
+	ctx.arc(16, 16, 14, 0, Math.PI * 2);
+	ctx.fill();
+	faviconEl.href = canvas.toDataURL("image/png");
+}
+
+// --- Browser notifications ------------------------------------------------
+
+const notifyToggle = document.getElementById("notifyToggle");
+
+function syncNotifyToggle() {
+	notifyToggle.checked = prefs.notify && Notification?.permission === "granted";
+}
+
+async function setNotify(on) {
+	if (on) {
+		if (!("Notification" in window)) {
+			alert("This browser doesn't support notifications.");
+			return;
+		}
+		let perm = Notification.permission;
+		if (perm === "default") perm = await Notification.requestPermission();
+		if (perm !== "granted") {
+			prefs.notify = false;
+			savePrefs();
+			syncNotifyToggle();
+			return;
+		}
+	}
+	prefs.notify = on;
+	savePrefs();
+	syncNotifyToggle();
+}
+
+notifyToggle.addEventListener("change", () => setNotify(notifyToggle.checked));
+
+function maybeNotify(svc, prevStatus) {
+	if (!prefs.notify || !("Notification" in window) || Notification.permission !== "granted") return;
+	const recovered = svc.status === "up";
+	const title = recovered ? `✅ ${svc.name} is back up` : `⚠️ ${svc.name} is ${STATUS_LABEL[svc.status].toLowerCase()}`;
+	const body = `${STATUS_LABEL[prevStatus]} → ${STATUS_LABEL[svc.status]}${svc.description ? ` · ${svc.description}` : ""}`;
+	try {
+		new Notification(title, { body, icon: faviconEl.href, tag: `isup-${svc.id}` });
+	} catch {
+		/* notifications can throw on some platforms; ignore */
+	}
+}
+
+// --- Service detail modal -------------------------------------------------
+
+const detailEl = document.getElementById("detail");
+const detailBody = document.getElementById("detailBody");
+let detailId = null;
+
+async function openDetail(svc) {
+	if (!svc) return;
+	detailId = svc.id;
+	closePanels({ except: "detail" });
+	closePalette();
+	detailEl.hidden = false;
+	setUrlParam("service", svc.id);
+	renderDetailHeader(svc);
+	// Incident history for this service (client-side filter of the recent log).
+	detailBody.querySelector(".detail__incidents").innerHTML = `<p class="panel__empty">Loading history…</p>`;
+	try {
+		const res = await fetch("/api/incidents?limit=100", { headers: { accept: "application/json" } });
+		const { incidents } = await res.json();
+		const mine = incidents.filter((i) => i.serviceId === svc.id);
+		renderDetailIncidents(mine);
+	} catch {
+		detailBody.querySelector(".detail__incidents").innerHTML = `<p class="panel__empty">Couldn't load history.</p>`;
+	}
+}
+
+function renderDetailHeader(svc) {
+	const d = svc.details ?? {};
+	const up = svc.uptime ?? {};
+	let host = "";
+	try {
+		if (d.url) host = new URL(d.url).host;
+	} catch {
+		/* ignore */
+	}
+	detailBody.innerHTML = `
+		<div class="detail__head">
+			<span class="dot is-${svc.status}"></span>
+			<h2>${escapeHtml(svc.name)}</h2>
+			<span class="tooltip__badge is-${svc.status}">${STATUS_LABEL[svc.status]}</span>
+		</div>
+		${svc.description ? `<p class="detail__desc">${escapeHtml(svc.description)}</p>` : ""}
+		<div class="detail__metrics">
+			<div><span>Uptime 24h</span><strong>${formatPct(up.day)}</strong></div>
+			<div><span>Uptime 7d</span><strong>${formatPct(up.week)}</strong></div>
+			${d.components && d.components.total ? `<div><span>Components</span><strong>${d.components.operational}/${d.components.total}</strong></div>` : ""}
+		</div>
+		<div class="detail__actions">
+			${host ? `<a class="detail__link" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(host)} ↗</a>` : "<span></span>"}
+			<button id="detailCopy" class="link-btn" type="button">Copy link</button>
+		</div>
+		<h3 class="detail__subhead">Incident history</h3>
+		<div class="detail__incidents"></div>`;
+	detailBody.querySelector("#detailCopy").addEventListener("click", () => {
+		const link = `${location.origin}/?service=${encodeURIComponent(svc.id)}`;
+		navigator.clipboard?.writeText(link).then(
+			() => {
+				const b = detailBody.querySelector("#detailCopy");
+				b.textContent = "Copied!";
+				setTimeout(() => (b.textContent = "Copy link"), 1500);
+			},
+			() => {},
+		);
+	});
+}
+
+function renderDetailIncidents(incidents) {
+	const host = detailBody.querySelector(".detail__incidents");
+	if (!incidents || incidents.length === 0) {
+		host.innerHTML = `<p class="panel__empty">No incidents recorded. 🎉</p>`;
+		return;
+	}
+	host.innerHTML = incidents
+		.map((i) => {
+			const ongoing = i.endedAt == null;
+			const duration = formatDuration((ongoing ? Date.now() : i.endedAt) - i.startedAt);
+			return `<div class="incident is-${i.status}">
+				<div class="incident__top">
+					<span class="incident__badge is-${i.status}">${STATUS_LABEL[i.status] ?? i.status}</span>
+					<span>${escapeHtml(new Date(i.startedAt).toLocaleString())}</span>
+				</div>
+				${i.description ? `<div class="incident__desc">${escapeHtml(i.description)}</div>` : ""}
+				<div class="incident__meta"><span>${ongoing ? "ongoing" : "resolved"}</span><span>${duration}</span></div>
+			</div>`;
+		})
+		.join("");
+}
+
+function closeDetail() {
+	if (!detailEl || detailEl.hidden) return;
+	detailEl.hidden = true;
+	detailId = null;
+	setUrlParam("service", null);
+}
+
+detailEl.addEventListener("click", (e) => {
+	if (e.target === detailEl || e.target.closest("[data-close]")) closeDetail();
+});
+
+// Open the detail modal when a tile is clicked.
+gridEl.addEventListener("click", (e) => {
+	const tile = e.target.closest(".tile");
+	if (tile && tile._svc) openDetail(tile._svc);
+});
+
+// --- Deep links (?service= / ?filter=) ------------------------------------
+
+function setUrlParam(key, value) {
+	const url = new URL(location.href);
+	if (value == null) url.searchParams.delete(key);
+	else url.searchParams.set(key, value);
+	history.replaceState(null, "", url);
+}
+
+let deepLinkDone = false;
+function handleDeepLinkOnce() {
+	if (deepLinkDone || !latest) return;
+	deepLinkDone = true;
+	const params = new URLSearchParams(location.search);
+	const filter = params.get("filter");
+	if (filter === "problems" || filter === "down") {
+		prefs.problemsOnly = true; // view-only; not persisted (shared-link driven)
+		syncProblemsBtn();
+		renderView();
+	}
+	const serviceId = params.get("service");
+	if (serviceId) {
+		const svc = latest.find((s) => s.id === serviceId);
+		if (svc) openDetail(svc);
+	}
+}
+
+// Keep ?filter= in sync when the user toggles problems-only.
+problemsBtn.addEventListener("click", () => setUrlParam("filter", prefs.problemsOnly ? "problems" : null));
+
+// --- Global keyboard shortcuts --------------------------------------------
+
 document.addEventListener("keydown", (e) => {
 	if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
 		e.preventDefault();
@@ -739,6 +974,7 @@ document.addEventListener("keydown", (e) => {
 	}
 	if (e.key === "Escape") {
 		if (!paletteEl.hidden) closePalette();
+		else if (!detailEl.hidden) closeDetail();
 		else closePanels();
 	}
 });
@@ -752,6 +988,8 @@ window.addEventListener("resize", () => {
 	resizeTimer = setTimeout(renderView, 150);
 });
 
+applyTheme();
 syncProblemsBtn();
+syncNotifyToggle();
 poll();
 setInterval(poll, POLL_INTERVAL_MS);
