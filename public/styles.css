@@ -221,7 +221,7 @@ body {
 }
 
 .palette__item.is-active {
-	background: rgba(255, 255, 255, 0.08);
+	background: rgba(127, 127, 127, 0.18);
 }
 
 .palette__cmd {
@@ -535,6 +535,17 @@ body {
 	}
 }
 
+.tile__logo {
+	flex: 0 0 auto;
+	margin-bottom: 0.25rem;
+	border-radius: 7px;
+	background-color: #fff;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 72%;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
 .tile__name {
 	font-weight: 700;
 	letter-spacing: -0.01em;
@@ -556,10 +567,10 @@ body {
 	z-index: 60;
 	max-width: 320px;
 	padding: 0.6rem 0.7rem;
-	background: rgba(13, 17, 23, 0.97);
+	background: var(--panel);
 	border: 1px solid var(--border);
 	border-radius: 8px;
-	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 	color: var(--text);
 	font-size: 0.8rem;
 	line-height: 1.4;
@@ -801,6 +812,17 @@ body {
 	align-items: center;
 	gap: 0.55rem;
 	padding-right: 1.5rem;
+}
+.detail__logo {
+	flex: 0 0 auto;
+	width: 30px;
+	height: 30px;
+	border-radius: 7px;
+	background-color: #fff;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 74%;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 .detail__head h2 {
 	margin: 0;

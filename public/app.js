@@ -12,6 +12,27 @@ const STATUS_LABEL = {
 	unknown: "Unknown",
 };
 
+// Brand domain per service id, used to fetch a favicon/logo.
+const LOGO_DOMAIN = {
+	github: "github.com", cloudflare: "cloudflare.com", npm: "npmjs.com", digitalocean: "digitalocean.com",
+	vercel: "vercel.com", netlify: "netlify.com", mongodb: "mongodb.com", sentry: "sentry.io",
+	circleci: "circleci.com", linode: "linode.com", render: "render.com", aws: "aws.amazon.com",
+	openai: "openai.com", anthropic: "anthropic.com", xai: "x.ai", groq: "groq.com",
+	elevenlabs: "elevenlabs.io", cohere: "cohere.com", replicate: "replicate.com", pinecone: "pinecone.io",
+	runway: "runwayml.com", stripe: "stripe.com", coinbase: "coinbase.com", shopify: "shopify.com",
+	plaid: "plaid.com", discord: "discord.com", slack: "slack.com", zoom: "zoom.us",
+	twilio: "twilio.com", sendgrid: "sendgrid.com", atlassian: "atlassian.com", dropbox: "dropbox.com",
+	datadog: "datadoghq.com", reddit: "reddit.com", figma: "figma.com", box: "box.com",
+	squarespace: "squarespace.com", wikipedia: "wikipedia.org", twitch: "twitch.tv",
+	epicgames: "epicgames.com", netflix: "netflix.com",
+};
+
+/** Logo URL for a service id, or null if unknown. Served by DuckDuckGo's icon CDN. */
+function logoUrl(id) {
+	const domain = LOGO_DOMAIN[id];
+	return domain ? `https://icons.duckduckgo.com/ip3/${domain}.ico` : null;
+}
+
 const gridEl = document.getElementById("grid");
 const updatedEl = document.getElementById("updated");
 const toastsEl = document.getElementById("toasts");
@@ -247,6 +268,18 @@ function renderTile(rect) {
 	const minSide = Math.min(rect.w, rect.h);
 	const nameSize = clamp(minSide * 0.22, 11, 30);
 	const showStatus = rect.h > 46 && rect.w > 60;
+
+	// Brand logo on a white chip (legible on any tile color), when there's room.
+	const url = logoUrl(svc.id);
+	if (url && minSide > 52) {
+		const logo = document.createElement("div");
+		logo.className = "tile__logo";
+		const sz = clamp(minSide * 0.32, 18, 48);
+		logo.style.width = `${sz}px`;
+		logo.style.height = `${sz}px`;
+		logo.style.backgroundImage = `url("${url}")`;
+		tile.appendChild(logo);
+	}
 
 	const name = document.createElement("div");
 	name.className = "tile__name";
@@ -866,7 +899,7 @@ function renderDetailHeader(svc) {
 	}
 	detailBody.innerHTML = `
 		<div class="detail__head">
-			<span class="dot is-${svc.status}"></span>
+			<span class="detail__logo" id="detailLogo"></span>
 			<h2>${escapeHtml(svc.name)}</h2>
 			<span class="tooltip__badge is-${svc.status}">${STATUS_LABEL[svc.status]}</span>
 		</div>
@@ -882,6 +915,11 @@ function renderDetailHeader(svc) {
 		</div>
 		<h3 class="detail__subhead">Incident history</h3>
 		<div class="detail__incidents"></div>`;
+	// Set the logo via CSSOM (avoids inline style attributes under our CSP).
+	const logoEl = detailBody.querySelector("#detailLogo");
+	const lurl = logoUrl(svc.id);
+	if (lurl) logoEl.style.backgroundImage = `url("${lurl}")`;
+	else logoEl.remove();
 	detailBody.querySelector("#detailCopy").addEventListener("click", () => {
 		const link = `${location.origin}/?service=${encodeURIComponent(svc.id)}`;
 		navigator.clipboard?.writeText(link).then(
