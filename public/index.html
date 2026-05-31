@@ -54,27 +54,36 @@
 			<div class="header__brand">
 				<h1 class="header__logo">isUpMap</h1>
 			</div>
-			<div class="header__center">
-				<ul class="legend" aria-label="Status legend">
-					<li><span class="swatch is-up"></span>Up</li>
-					<li><span class="swatch is-degraded"></span>Degraded</li>
-					<li><span class="swatch is-down"></span>Down</li>
-					<li><span class="swatch is-unknown"></span>Unknown</li>
-				</ul>
-				<span id="updated" class="updated">Loading…</span>
-			</div>
+			<button id="searchBtn" class="header__search" type="button" aria-haspopup="dialog" title="Search (⌘K)">
+				<i data-lucide="search"></i>
+				<span class="header__search-placeholder">Search services or run a command…</span>
+				<span class="kbd">⌘K</span>
+			</button>
 			<div class="toolbar">
-				<button id="searchBtn" class="tbar-btn" type="button" aria-haspopup="dialog" title="Search (⌘K)">
-					<i data-lucide="search"></i><span class="kbd">⌘K</span>
+				<button id="problemsBtn" class="tbar-btn tbar-btn--icon" type="button" aria-pressed="false" title="Problems only">
+					<i data-lucide="alert-triangle"></i>
+					<span id="problemsCount" class="tbar-badge" hidden>0</span>
 				</button>
-				<button id="problemsBtn" class="tbar-btn" type="button" aria-pressed="false">Problems</button>
-				<button id="customizeBtn" class="tbar-btn" type="button" aria-expanded="false" aria-controls="customizePanel">Customize</button>
-				<button id="incidentsBtn" class="tbar-btn" type="button" aria-expanded="false" aria-controls="incidentsPanel">Incidents</button>
+				<button id="customizeBtn" class="tbar-btn tbar-btn--icon" type="button" aria-expanded="false" aria-controls="customizePanel" title="Customize">
+					<i data-lucide="sliders-horizontal"></i>
+				</button>
+				<button id="incidentsBtn" class="tbar-btn tbar-btn--icon" type="button" aria-expanded="false" aria-controls="incidentsPanel" title="Incidents">
+					<i data-lucide="activity"></i>
+				</button>
 				<button id="themeBtn" class="tbar-btn tbar-btn--icon" type="button" title="Toggle theme">
 					<i data-lucide="sun"></i>
 				</button>
 			</div>
 		</header>
+		<div class="statusbar">
+			<ul class="legend" aria-label="Status legend">
+				<li><span class="swatch is-up"></span>Up</li>
+				<li><span class="swatch is-degraded"></span>Degraded</li>
+				<li><span class="swatch is-down"></span>Down</li>
+				<li><span class="swatch is-unknown"></span>Unknown</li>
+			</ul>
+			<span id="updated" class="updated">Loading…</span>
+		</div>
 
 		<main id="grid" class="grid" aria-live="polite">
 			<p class="grid__loading">Fetching service status…</p>
@@ -121,7 +130,7 @@
 
 		<div id="detail" class="modal" hidden>
 			<div class="modal__box" role="dialog" aria-modal="true" aria-label="Service detail">
-				<button class="modal__close" type="button" data-close aria-label="Close">×</button>
+				<button class="modal__close" type="button" data-close aria-label="Close"><i data-lucide="x"></i></button>
 				<div id="detailBody" class="modal__body"></div>
 			</div>
 		</div>

@@ -817,6 +817,11 @@ function worstStatus(services) {
 function updateChrome(services) {
 	const issues = services.filter((s) => s.status === "down" || s.status === "degraded").length;
 	document.title = issues > 0 ? `(${issues}) isUpMap — issues` : "isUpMap — Service Status";
+	const countEl = document.getElementById("problemsCount");
+	if (countEl) {
+		countEl.textContent = issues;
+		countEl.hidden = issues === 0;
+	}
 
 	const color = { up: "#40c057", degraded: "#f0b429", down: "#fa5252" }[worstStatus(services)];
 	const canvas = document.createElement("canvas");
@@ -909,34 +914,54 @@ function renderDetailHeader(svc) {
 	detailBody.innerHTML = `
 		<div class="detail__head">
 			<span class="detail__logo" id="detailLogo"></span>
-			<h2>${escapeHtml(svc.name)}</h2>
-			<span class="tooltip__badge is-${svc.status}">${STATUS_LABEL[svc.status]}</span>
+			<div class="detail__head-body">
+				<div class="detail__name-row">
+					<h2 class="detail__name">${escapeHtml(svc.name)}</h2>
+					<span class="detail__badge is-${svc.status}">${STATUS_LABEL[svc.status]}</span>
+				</div>
+				${svc.description ? `<p class="detail__desc">${escapeHtml(svc.description)}</p>` : ""}
+			</div>
 		</div>
-		${svc.description ? `<p class="detail__desc">${escapeHtml(svc.description)}</p>` : ""}
 		<div class="detail__metrics">
-			<div><span>Uptime 24h</span><strong>${formatPct(up.day)}</strong></div>
-			<div><span>Uptime 7d</span><strong>${formatPct(up.week)}</strong></div>
-			${d.components && d.components.total ? `<div><span>Components</span><strong>${d.components.operational}/${d.components.total}</strong></div>` : ""}
+			<div class="detail__metric">
+				<span class="detail__metric-label">Uptime 24h</span>
+				<strong class="detail__metric-value">${formatPct(up.day)}</strong>
+			</div>
+			<div class="detail__metric">
+				<span class="detail__metric-label">Uptime 7d</span>
+				<strong class="detail__metric-value">${formatPct(up.week)}</strong>
+			</div>
+			${d.components && d.components.total ? `<div class="detail__metric"><span class="detail__metric-label">Components</span><strong class="detail__metric-value">${d.components.operational}/${d.components.total}</strong></div>` : ""}
 		</div>
 		<div class="detail__actions">
-			${d.url ? `<a class="detail__visit" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer">Visit status page ↗</a>` : "<span></span>"}
-			<button id="detailCopy" class="link-btn" type="button">Copy link</button>
+			${d.url ? `<a class="detail__visit" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link"></i> Visit status page</a>` : ""}
+			<button id="detailCopy" class="detail__copy-btn" type="button"><i data-lucide="link-2"></i> <span id="detailCopyLabel">Copy link</span></button>
 		</div>
-		${host ? `<div class="detail__host">${escapeHtml(host)}</div>` : ""}
-		<h3 class="detail__subhead">Incident history</h3>
+		${host ? `<p class="detail__host">${escapeHtml(host)}</p>` : ""}
+		<div class="detail__section-head">
+			<h3 class="detail__subhead">Incident history</h3>
+		</div>
 		<div class="detail__incidents"></div>`;
 	// Set the logo via CSSOM (avoids inline style attributes under our CSP).
 	const logoEl = detailBody.querySelector("#detailLogo");
 	const lurl = logoUrl(svc.id);
 	if (lurl) logoEl.style.backgroundImage = `url("${lurl}")`;
 	else logoEl.remove();
+	// Tint the modal top border to reflect service status.
+	detailEl.querySelector(".modal__box").className = `modal__box is-${svc.status}`;
+	// Render Lucide icons injected by the template.
+	const newIcons = [...detailBody.querySelectorAll("i[data-lucide]")];
+	if (newIcons.length) lucide.createIcons({ nodes: newIcons });
 	detailBody.querySelector("#detailCopy").addEventListener("click", () => {
 		const link = `${location.origin}/?service=${encodeURIComponent(svc.id)}`;
 		navigator.clipboard?.writeText(link).then(
 			() => {
-				const b = detailBody.querySelector("#detailCopy");
-				b.textContent = "Copied!";
-				setTimeout(() => (b.textContent = "Copy link"), 1500);
+				const label = detailBody.querySelector("#detailCopyLabel");
+				if (label) label.textContent = "Copied!";
+				setTimeout(() => {
+					const l = detailBody.querySelector("#detailCopyLabel");
+					if (l) l.textContent = "Copy link";
+				}, 1500);
 			},
 			() => {},
 		);
@@ -953,13 +978,14 @@ function renderDetailIncidents(incidents) {
 		.map((i) => {
 			const ongoing = i.endedAt == null;
 			const duration = formatDuration((ongoing ? Date.now() : i.endedAt) - i.startedAt);
-			return `<div class="incident is-${i.status}">
-				<div class="incident__top">
-					<span class="incident__badge is-${i.status}">${STATUS_LABEL[i.status] ?? i.status}</span>
-					<span>${escapeHtml(new Date(i.startedAt).toLocaleString())}</span>
+			return `<div class="detail-inc is-${i.status}">
+				<div class="detail-inc__top">
+					<span class="detail-inc__badge is-${i.status}">${STATUS_LABEL[i.status] ?? i.status}</span>
+					<span class="detail-inc__dur">${duration}</span>
+					<span class="detail-inc__state${ongoing ? " detail-inc__state--live" : ""}">${ongoing ? "Ongoing" : "Resolved"}</span>
 				</div>
-				${i.description ? `<div class="incident__desc">${escapeHtml(i.description)}</div>` : ""}
-				<div class="incident__meta"><span>${ongoing ? "ongoing" : "resolved"}</span><span>${duration}</span></div>
+				${i.description ? `<p class="detail-inc__desc">${escapeHtml(i.description)}</p>` : ""}
+				<div class="detail-inc__date">${escapeHtml(new Date(i.startedAt).toLocaleString())}</div>
 			</div>`;
 		})
 		.join("");
