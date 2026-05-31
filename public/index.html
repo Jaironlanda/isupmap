@@ -4,58 +4,75 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-		<title>IsUp — Live Service Status Heatmap</title>
+		<title>isUpMap — Service Status</title>
 		<meta name="description" content="Real-time up/down status heatmap for 40+ popular internet services. See which services are up, degraded, or down — right now." />
-		<link rel="canonical" href="https://map.warmindex.com/" />
+		<link rel="canonical" href="https://isupmap.com/" />
 		<meta name="robots" content="index, follow" />
 		<meta name="theme-color" content="#0f1117" />
 
 		<!-- Open Graph -->
 		<meta property="og:type" content="website" />
-		<meta property="og:url" content="https://map.warmindex.com/" />
-		<meta property="og:title" content="IsUp — Live Service Status Heatmap" />
+		<meta property="og:url" content="https://isupmap.com/" />
+		<meta property="og:title" content="isUpMap — Service Status" />
 		<meta property="og:description" content="Real-time up/down status heatmap for 40+ popular internet services. See which services are up, degraded, or down — right now." />
-		<meta property="og:site_name" content="IsUp" />
-		<meta property="og:image" content="https://map.warmindex.com/images/og-map.png" />
+		<meta property="og:site_name" content="isUpMap" />
+		<meta property="og:image" content="https://isupmap.com/images/og-map.png" />
 		<meta property="og:image:width" content="1200" />
 		<meta property="og:image:height" content="630" />
-		<meta property="og:image:alt" content="IsUp live service status heatmap showing AWS, GitHub, OpenAI, Cloudflare and more" />
+		<meta property="og:image:alt" content="isUpMap live service status heatmap showing AWS, GitHub, OpenAI, Cloudflare and more" />
 
 		<!-- Twitter Card -->
 		<meta name="twitter:card" content="summary_large_image" />
-		<meta name="twitter:title" content="IsUp — Live Service Status Heatmap" />
+		<meta name="twitter:title" content="isUpMap — Service Status" />
 		<meta name="twitter:description" content="Real-time up/down status heatmap for 40+ popular internet services." />
-		<meta name="twitter:url" content="https://map.warmindex.com/" />
-		<meta name="twitter:image" content="https://map.warmindex.com/images/og-map.png" />
-		<meta name="twitter:image:alt" content="IsUp live service status heatmap showing AWS, GitHub, OpenAI, Cloudflare and more" />
+		<meta name="twitter:url" content="https://isupmap.com/" />
+		<meta name="twitter:image" content="https://isupmap.com/images/og-map.png" />
+		<meta name="twitter:image:alt" content="isUpMap live service status heatmap showing AWS, GitHub, OpenAI, Cloudflare and more" />
 
 		<link rel="icon" id="favicon" href="data:," />
 		<link rel="stylesheet" href="/styles.css" />
+		<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 		<script src="/analytics.js" type="module"></script>
 	</head>
 	<body>
+		<div id="domainBanner" class="domain-banner" hidden>
+			We've moved! The official domain is now
+			<a href="https://isupmap.com" class="domain-banner__link">isUpMap.com</a>.
+			<button class="domain-banner__close" type="button" aria-label="Dismiss">×</button>
+		</div>
+		<script>
+			(function () {
+				if (location.hostname === 'map.warmindex.com') {
+					var b = document.getElementById('domainBanner');
+					b.hidden = false;
+					b.querySelector('.domain-banner__close').addEventListener('click', function () { b.hidden = true; });
+				}
+			})();
+		</script>
+
 		<header class="header">
-			<div class="header__title">
-				<h1>IsUp</h1>
-				<span class="header__subtitle">Live service status heatmap</span>
+			<div class="header__brand">
+				<h1 class="header__logo">isUpMap</h1>
 			</div>
-			<div class="header__meta">
-				<span id="updated" class="updated">Loading…</span>
+			<div class="header__center">
 				<ul class="legend" aria-label="Status legend">
 					<li><span class="swatch is-up"></span>Up</li>
 					<li><span class="swatch is-degraded"></span>Degraded</li>
 					<li><span class="swatch is-down"></span>Down</li>
 					<li><span class="swatch is-unknown"></span>Unknown</li>
 				</ul>
-				<div class="toolbar">
-					<button id="themeBtn" class="tbar-btn tbar-btn--icon" type="button" title="Toggle theme">☀️</button>
-					<button id="searchBtn" class="tbar-btn" type="button" aria-haspopup="dialog" title="Search (⌘K)">
-						Search <span class="kbd">⌘K</span>
-					</button>
-					<button id="problemsBtn" class="tbar-btn" type="button" aria-pressed="false">Problems only</button>
-					<button id="customizeBtn" class="tbar-btn" type="button" aria-expanded="false" aria-controls="customizePanel">Customize</button>
-					<button id="incidentsBtn" class="tbar-btn" type="button" aria-expanded="false" aria-controls="incidentsPanel">Incidents</button>
-				</div>
+				<span id="updated" class="updated">Loading…</span>
+			</div>
+			<div class="toolbar">
+				<button id="searchBtn" class="tbar-btn" type="button" aria-haspopup="dialog" title="Search (⌘K)">
+					<i data-lucide="search"></i><span class="kbd">⌘K</span>
+				</button>
+				<button id="problemsBtn" class="tbar-btn" type="button" aria-pressed="false">Problems</button>
+				<button id="customizeBtn" class="tbar-btn" type="button" aria-expanded="false" aria-controls="customizePanel">Customize</button>
+				<button id="incidentsBtn" class="tbar-btn" type="button" aria-expanded="false" aria-controls="incidentsPanel">Incidents</button>
+				<button id="themeBtn" class="tbar-btn tbar-btn--icon" type="button" title="Toggle theme">
+					<i data-lucide="sun"></i>
+				</button>
 			</div>
 		</header>
 

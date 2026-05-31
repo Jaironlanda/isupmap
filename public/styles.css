@@ -48,66 +48,98 @@ body {
 	overflow: hidden;
 }
 
+/* --- Domain migration banner --- */
+.domain-banner {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	padding: 0.45rem 2.5rem 0.45rem 1rem;
+	background: #c2900a;
+	color: #0b0e14;
+	font-size: 0.875rem;
+	font-weight: 500;
+	position: relative;
+}
+
+.domain-banner__link {
+	color: #0b0e14;
+	font-weight: 700;
+	text-underline-offset: 2px;
+}
+
+.domain-banner__close {
+	position: absolute;
+	right: 0.6rem;
+	background: none;
+	border: none;
+	color: #0b0e14;
+	font-size: 1.1rem;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0.2rem 0.4rem;
+	opacity: 0.7;
+}
+
+.domain-banner__close:hover { opacity: 1; }
+
 /* --- Header --- */
 .header {
 	flex: 0 0 auto;
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	justify-content: space-between;
-	gap: 1rem;
-	padding: 0.7rem 1rem;
+	gap: 0.5rem 1rem;
+	padding: 0.45rem 0.9rem;
 	border-bottom: 1px solid var(--border);
 }
 
-.header__title {
+.header__brand {
 	display: flex;
-	align-items: baseline;
-	gap: 0.6rem;
+	align-items: center;
 }
 
-.header__title h1 {
+.header__logo {
 	margin: 0;
-	font-size: 1.3rem;
+	font-size: 1.05rem;
+	font-weight: 700;
 	letter-spacing: -0.02em;
 }
 
-.header__subtitle {
-	color: var(--muted);
-	font-size: 0.85rem;
-}
-
-.header__meta {
+.header__center {
 	display: flex;
 	align-items: center;
-	gap: 1.25rem;
+	gap: 1rem;
+	margin: 0 auto;
 }
 
 .updated {
 	color: var(--muted);
-	font-size: 0.82rem;
+	font-size: 0.78rem;
 	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
 }
 
 .legend {
 	display: flex;
-	gap: 0.9rem;
+	gap: 0.8rem;
 	margin: 0;
 	padding: 0;
 	list-style: none;
-	font-size: 0.78rem;
+	font-size: 0.74rem;
 	color: var(--muted);
 }
 
 .legend li {
 	display: flex;
 	align-items: center;
-	gap: 0.35rem;
+	gap: 0.3rem;
 }
 
 .swatch {
-	width: 0.7rem;
-	height: 0.7rem;
+	width: 0.65rem;
+	height: 0.65rem;
 	border-radius: 2px;
 	display: inline-block;
 }
@@ -127,20 +159,20 @@ body {
 
 .toolbar {
 	display: flex;
-	gap: 0.4rem;
+	gap: 0.3rem;
 	align-items: center;
 }
 
 .tbar-btn {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.35rem;
+	gap: 0.3rem;
 	background: var(--panel);
 	color: var(--text);
 	border: 1px solid var(--border);
 	border-radius: 6px;
-	padding: 0.3rem 0.7rem;
-	font-size: 0.8rem;
+	padding: 0.28rem 0.6rem;
+	font-size: 0.78rem;
 	font-weight: 600;
 	cursor: pointer;
 	white-space: nowrap;
@@ -148,6 +180,15 @@ body {
 
 .tbar-btn:hover {
 	border-color: var(--muted);
+}
+
+/* Lucide icons render as inline SVGs; keep them sized to the button text. */
+.tbar-btn svg,
+.tbar-btn i[data-lucide] {
+	width: 15px;
+	height: 15px;
+	flex: 0 0 auto;
+	stroke-width: 2;
 }
 
 .tbar-btn.is-active {
@@ -749,26 +790,26 @@ body {
 /* --- Mobile / small screens --- */
 @media (max-width: 640px) {
 	.header {
+		gap: 0.4rem 0.5rem;
+		padding: 0.45rem 0.6rem;
+	}
+	.header__center {
+		order: 3;
+		flex-basis: 100%;
+		margin: 0;
+		justify-content: space-between;
 		gap: 0.5rem;
-		padding: 0.5rem 0.7rem;
-	}
-	.header__subtitle {
-		display: none;
-	}
-	.header__meta {
-		gap: 0.5rem 0.6rem;
-		flex-wrap: wrap;
-		justify-content: flex-start;
 	}
 	.legend {
 		display: none; /* status colors are shown in the detail sheet instead */
 	}
 	.toolbar {
+		margin-left: auto;
 		flex-wrap: wrap;
-		gap: 0.35rem;
+		gap: 0.3rem;
 	}
 	.tbar-btn {
-		padding: 0.3rem 0.55rem;
+		padding: 0.28rem 0.5rem;
 		font-size: 0.74rem;
 	}
 	.kbd {
@@ -822,8 +863,7 @@ body {
 
 /* --- Theme button + notify toggle --- */
 .tbar-btn--icon {
-	padding: 0.3rem 0.5rem;
-	font-size: 0.9rem;
+	padding: 0.28rem 0.42rem;
 	line-height: 1;
 }
 

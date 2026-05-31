@@ -2,7 +2,7 @@
 // and injected from this same-origin module so the page needs no inline script
 // (keeps the Content-Security-Policy free of 'unsafe-inline').
 
-const GA_ID = "G-19QZL694B9";
+const GA_ID = "G-QBSVJNYB18";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", ""]);
 
 if (!LOCAL_HOSTS.has(location.hostname)) {
