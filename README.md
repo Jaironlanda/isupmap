@@ -1,5 +1,7 @@
 # IsUp — Service Status Heatmap
 
+**Live: [map.warmindex.com](https://map.warmindex.com)**
+
 A live **up / down heatmap** for 40+ popular internet services, rendered as a
 stock-map style treemap with brand logos. Built on a single
 [Cloudflare Worker](https://developers.cloudflare.com/workers/): a **Cron
