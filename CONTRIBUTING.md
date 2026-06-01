@@ -3,8 +3,8 @@
 ## Local setup
 
 ```sh
-git clone https://github.com/Jaironlanda/isup.git
-cd isup
+git clone https://github.com/Jaironlanda/isupmap.git
+cd isupmap
 npm install
 npm run db:schema:local   # create local D1 tables (run once)
 npm run dev               # http://localhost:8787

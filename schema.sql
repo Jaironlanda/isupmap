@@ -1,4 +1,4 @@
--- IsUp persistence schema (Cloudflare D1 / SQLite).
+-- IsUpMap persistence schema (Cloudflare D1 / SQLite).
 -- Applied locally with:  npm run db:schema:local
 -- Applied remotely with: npm run db:schema:remote
 

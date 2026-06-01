@@ -55,7 +55,7 @@ let highlightTimer = null;
 
 // --- Local preferences (browser-only, no server state) --------------------
 
-const PREFS_KEY = "isup:prefs";
+const PREFS_KEY = "isupmap:prefs";
 
 function loadPrefs() {
 	try {
@@ -877,7 +877,7 @@ function maybeNotify(svc, prevStatus) {
 	const title = recovered ? `✅ ${svc.name} is back up` : `⚠️ ${svc.name} is ${STATUS_LABEL[svc.status].toLowerCase()}`;
 	const body = `${STATUS_LABEL[prevStatus]} → ${STATUS_LABEL[svc.status]}${svc.description ? ` · ${svc.description}` : ""}`;
 	try {
-		new Notification(title, { body, icon: faviconEl.href, tag: `isup-${svc.id}` });
+		new Notification(title, { body, icon: faviconEl.href, tag: `isupmap-${svc.id}` });
 	} catch {
 		/* notifications can throw on some platforms; ignore */
 	}

@@ -1,6 +1,6 @@
 # isUpMap — Service Status Heatmap
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Jaironlanda/isup)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Jaironlanda/isupmap)
 
 **Live: [isUpMap](https://isupmap.com)** (Official)
 **Live: [map.warmindex.com](https://map.warmindex.com)**
@@ -78,7 +78,7 @@ Every service is normalized to one of: `up` · `degraded` · `down` · `unknown`
 
 ## Data sources
 
-All data comes from each service's **own public status page / feed**. IsUp is a
+All data comes from each service's **own public status page / feed**. IsUpMap is a
 read-only aggregator and is not affiliated with any of these services. The list
 lives in [src/services.ts](src/services.ts); for Statuspage entries the
 `/api/v2/summary.json` path is appended to the `base` shown below.
@@ -196,7 +196,7 @@ provision a D1 database, and deploy — no manual config needed.
 ### Manual deploy
 
 ```sh
-npx wrangler d1 create isup   # creates the D1 database; paste the printed id into wrangler.jsonc
+npx wrangler d1 create isupmap   # creates the D1 database; paste the printed id into wrangler.jsonc
 npm run deploy                 # deploys the Worker and applies schema.sql to the remote D1
 ```
 

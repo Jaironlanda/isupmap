@@ -2,14 +2,14 @@
   "name": "isupmap",
   "version": "0.0.0",
   "scripts": {
-    "deploy": "wrangler deploy && wrangler d1 execute isup --remote --file=./schema.sql",
+    "deploy": "wrangler deploy && wrangler d1 execute isupmap --remote --file=./schema.sql",
     "dev": "wrangler dev",
     "dev:cron": "wrangler dev --test-scheduled",
     "start": "wrangler dev",
     "types": "wrangler types",
     "typecheck": "tsc --noEmit",
-    "db:schema:local": "wrangler d1 execute isup --local --file=./schema.sql",
-    "db:schema:remote": "wrangler d1 execute isup --remote --file=./schema.sql"
+    "db:schema:local": "wrangler d1 execute isupmap --local --file=./schema.sql",
+    "db:schema:remote": "wrangler d1 execute isupmap --remote --file=./schema.sql"
   },
   "dependencies": {
     "fast-xml-parser": "^4.5.0"

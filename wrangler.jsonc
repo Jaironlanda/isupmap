@@ -26,11 +26,11 @@
 	},
 	// History/persistence store. When deploying via the Deploy Button, Cloudflare
 	// provisions a new D1 database and fills in the database_id automatically.
-	// For manual deploys: run `npx wrangler d1 create isup` and paste the id here.
+	// For manual deploys: run `npx wrangler d1 create isupmap` and paste the id here.
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "isup",
+			"database_name": "isupmap",
 			"database_id": ""
 		}
 	],
