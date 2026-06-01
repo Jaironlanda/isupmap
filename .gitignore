@@ -165,6 +165,7 @@ dist
 .env*
 !.env.example
 .wrangler/
+wrangler.prod.jsonc
 
 # Local Claude Code config
 .claude/

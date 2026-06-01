@@ -2,7 +2,8 @@
 // and injected from this same-origin module so the page needs no inline script
 // (keeps the Content-Security-Policy free of 'unsafe-inline').
 
-const GA_ID = "G-QBSVJNYB18";
+// Replace with your own GA4 measurement ID, or remove this file to disable analytics.
+const GA_ID = "G-XXXXXXXXXX";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", ""]);
 
 if (!LOCAL_HOSTS.has(location.hostname)) {

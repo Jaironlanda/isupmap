@@ -1,5 +1,7 @@
 # isUpMap — Service Status Heatmap
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Jaironlanda/isup)
+
 **Live: [isUpMap](https://isupmap.com)** (Official)
 **Live: [map.warmindex.com](https://map.warmindex.com)**
 
@@ -180,19 +182,32 @@ curl -s http://localhost:8787/api/incidents | jq
 > `npm run dev:cron` (`--test-scheduled`) and the `/__scheduled` route instead.
 > Production crons invoke `scheduled()` natively and are unaffected.
 
-## Deploying (D1 setup)
+## Deploying
+
+### Deploy Button (recommended)
+
+Click the button at the top of this README. Cloudflare will fork the repo,
+provision a D1 database, and deploy — no manual config needed.
+
+> After deploy, attach a **custom domain / route** in the Cloudflare dashboard
+> (or add a `routes` entry to `wrangler.jsonc`), since `workers_dev: false`
+> disables the `*.workers.dev` URL.
+
+### Manual deploy
 
 ```sh
-npx wrangler d1 create isup          # paste the printed database_id into wrangler.jsonc
-npm run db:schema:remote             # create tables + indexes in the remote D1 (idempotent)
-npm run deploy
+npx wrangler d1 create isup   # creates the D1 database; paste the printed id into wrangler.jsonc
+npm run deploy                 # deploys the Worker and applies schema.sql to the remote D1
 ```
 
-> `wrangler.jsonc` sets `workers_dev: false`, so the `*.workers.dev` URL is
-> disabled — attach a **custom domain / route** (Cloudflare dashboard or a
-> `routes` entry) before deploying, or the Worker has no public URL. Re-run
-> `db:schema:remote` after adding indexes/tables (`CREATE … IF NOT EXISTS` is
-> idempotent).
+> Re-run `npm run db:schema:remote` after adding indexes/tables
+> (`CREATE … IF NOT EXISTS` is idempotent).
+
+### Rate-limit binding
+
+`wrangler.jsonc` declares a rate-limit binding with `namespace_id: 1001`. This
+number is an arbitrary local identifier — you do not need to create or change it;
+Cloudflare provisions the binding automatically on deploy.
 
 ## Project structure
 

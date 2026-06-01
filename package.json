@@ -1,9 +1,8 @@
 {
-  "name": "cf-isupordown",
+  "name": "isupmap",
   "version": "0.0.0",
-  "private": true,
   "scripts": {
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy && wrangler d1 execute isup --remote --file=./schema.sql",
     "dev": "wrangler dev",
     "dev:cron": "wrangler dev --test-scheduled",
     "start": "wrangler dev",

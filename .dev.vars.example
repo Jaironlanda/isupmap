@@ -1,0 +1,6 @@
+# Local development overrides — copy to .dev.vars (gitignored) and fill in values.
+# Currently this project has no required secrets.
+# Add any future Worker secrets here so contributors know what's needed.
+
+# Example:
+# MY_SECRET=your-value-here

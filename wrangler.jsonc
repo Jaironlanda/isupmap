@@ -24,14 +24,14 @@
 			"*/5 * * * *"
 		]
 	},
-	// History/persistence store. Run `npx wrangler d1 create isup` and paste the
-	// returned id into `database_id` before deploying (a placeholder is fine for
-	// local `wrangler dev`, which uses a local SQLite simulation).
+	// History/persistence store. When deploying via the Deploy Button, Cloudflare
+	// provisions a new D1 database and fills in the database_id automatically.
+	// For manual deploys: run `npx wrangler d1 create isup` and paste the id here.
 	"d1_databases": [
 		{
 			"binding": "DB",
 			"database_name": "isup",
-			"database_id": "210df004-5ad3-42ab-ac14-5648860b0aac"
+			"database_id": ""
 		}
 	],
 	// Per-IP rate limiting for the public /api/* endpoints: 60 requests / 60s.
