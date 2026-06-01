@@ -3,7 +3,7 @@
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Jaironlanda/isupmap)
 
 **Live: [isUpMap](https://isupmap.com)** (Official)
-**Live: [map.warmindex.com](https://map.warmindex.com)**
+**Live: [map.warmindex.com](https://map.warmindex.com)** (Backup)
 
 A live **up / down heatmap** for 40+ popular internet services, rendered as a
 stock-map style treemap with brand logos. Built on a single
@@ -13,7 +13,7 @@ incident log to **D1**, and a static frontend renders the treemap with
 per-service uptime, an incident history, a command palette, light/dark themes,
 and a mobile-friendly detail sheet.
 
-![Heatmap example](./screenshot/example.png)
+![Heatmap example](./public/images/og-map.png)
 
 ## Features
 
