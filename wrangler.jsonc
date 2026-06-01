@@ -9,7 +9,20 @@
 	"compatibility_date": "2026-05-30",
 	"assets": {
 		// The path to the directory containing the `index.html` file to be served at `/`
-		"directory": "./public"
+		"directory": "./public",
+		// Expose assets to the Worker so it can rewrite /analytics.js at the edge.
+		"binding": "ASSETS",
+		// Run the Worker first for this one path so it can inject the GA4 ID from
+		// the GA_ID var; every other asset is still served directly (asset-first).
+		"run_worker_first": [
+			"/analytics.js"
+		]
+	},
+	// Google Analytics 4 measurement ID, injected into /analytics.js at the edge.
+	// Empty here on purpose: forks/clones send NO analytics. Put your real
+	// "G-XXXXXXXXXX" in wrangler.prod.jsonc (gitignored) — never in this public file.
+	"vars": {
+		"GA_ID": ""
 	},
 	"observability": {
 		"enabled": true

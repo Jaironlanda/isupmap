@@ -51,6 +51,25 @@ export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
 
+		// Serve /analytics.js with the GA4 measurement ID injected from the GA_ID
+		// var (see wrangler.jsonc). The committed file ships a G-XXXXXXXXXX
+		// placeholder; when GA_ID is unset (e.g. forks) analytics is disabled.
+		if (url.pathname === "/analytics.js") {
+			const gaId = env.GA_ID?.trim();
+			const headers = {
+				"content-type": "text/javascript; charset=utf-8",
+				"x-content-type-options": "nosniff",
+				"cache-control": "public, max-age=3600",
+			};
+			if (!gaId) {
+				return new Response("// Analytics disabled (no GA_ID configured).\n", { headers });
+			}
+			const asset = await env.ASSETS.fetch(new URL("/analytics.js", url.origin));
+			const source = await asset.text();
+			// Replace only the quoted placeholder (leave the explanatory comment intact).
+			return new Response(source.replace(/"G-XXXXXXXXXX"/, JSON.stringify(gaId)), { headers });
+		}
+
 		if (url.pathname.startsWith("/api/")) {
 			// Per-IP rate limit. Shared NAT IPs may share a bucket; 60/min is
 			// generous enough for the dashboard's ~1 poll / 45s that this is fine.

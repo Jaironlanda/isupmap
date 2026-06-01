@@ -10,6 +10,19 @@ npm run db:schema:local   # create local D1 tables (run once)
 npm run dev               # http://localhost:8787
 ```
 
+> **Note:** `wrangler.jsonc` ships with an empty `database_id` (filled in at
+> deploy time). `wrangler dev` won't boot until it has a value, so for local
+> work set any placeholder UUID — local D1 ignores the actual id:
+>
+> ```jsonc
+> "database_id": "00000000-0000-0000-0000-000000000000"
+> ```
+>
+> Analytics is off locally by default: the `GA_ID` var is empty in
+> `wrangler.jsonc`, so the Worker serves `/analytics.js` as a no-op. A real
+> measurement ID is injected only in production (kept in the gitignored
+> `wrangler.prod.jsonc`).
+
 Trigger the cron locally to populate data:
 
 ```sh

@@ -2,7 +2,9 @@
 // and injected from this same-origin module so the page needs no inline script
 // (keeps the Content-Security-Policy free of 'unsafe-inline').
 
-// Replace with your own GA4 measurement ID, or remove this file to disable analytics.
+// The G-XXXXXXXXXX placeholder below is replaced at the edge by the Worker with
+// the GA_ID var (set in wrangler.prod.jsonc; see src/index.ts). When GA_ID is
+// unset, the Worker serves a no-op instead, so forks/clones send no analytics.
 const GA_ID = "G-XXXXXXXXXX";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", ""]);
 
