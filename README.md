@@ -243,3 +243,14 @@ wrangler.jsonc       Worker config (main, assets, cron, D1, rate limit)
   `wrangler dev`, so local runs hit upstreams live on each cache miss; production
   caches aggressively. The native rate limiter is eventually-consistent and
   per-location, so its cutoff is best-effort rather than an exact count.
+
+## Sponsors
+
+Thanks to our sponsors for supporting this project:
+
+| | Sponsor | Description |
+|---|---------|-------------|
+| <img src="public/images/sponsor/stashsync-app/logo.png" width="24" height="24" /> | [StashSync.app](https://stashsync.app) | Your second brain. Public when you want it. |
+| <img src="public/images/sponsor/jsonsilo-com/logo.png" width="24" height="24" /> | [JSONsilo.com](https://jsonsilo.com) | Host JSON Files with Unmatched Efficiency |
+| <img src="public/images/sponsor/warmindex-com/logo.png" width="24" height="24" /> | [WarmIndex.com](https://warmindex.com) | Web App Directory for Side Projects & Open Source |
+| <img src="public/images/sponsor/utilsfor-dev/logo.png" width="24" height="24" /> | [UtilsFor.dev](https://utilsfor.dev) | Tools for developers |

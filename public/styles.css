@@ -48,6 +48,87 @@ body {
 	overflow: hidden;
 }
 
+/* --- Sponsor ticker --- */
+@keyframes ticker-scroll {
+	from { transform: translateX(0); }
+	to   { transform: translateX(-50%); }
+}
+
+.sponsor-ticker {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	background: var(--panel);
+	border-bottom: 1px solid var(--border);
+	font-size: 0.8125rem;
+	overflow: hidden;
+}
+
+.sponsor-ticker__label {
+	flex: 0 0 auto;
+	padding: 0.35rem 0.75rem;
+	color: var(--muted);
+	font-size: 0.6875rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.07em;
+	border-right: 1px solid var(--border);
+	white-space: nowrap;
+}
+
+.sponsor-ticker__mask {
+	flex: 1 1 0;
+	overflow: hidden;
+}
+
+.sponsor-ticker__track {
+	display: inline-flex;
+	align-items: center;
+	gap: 0;
+	white-space: nowrap;
+	animation: ticker-scroll 36s linear infinite;
+}
+
+.sponsor-ticker__track:hover {
+	animation-play-state: paused;
+}
+
+.sponsor-ticker__item {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.35rem 1.25rem;
+	color: var(--text);
+	text-decoration: none;
+}
+
+.sponsor-ticker__item:hover {
+	color: var(--text);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.sponsor-ticker__logo {
+	width: 18px;
+	height: 18px;
+	border-radius: 4px;
+	object-fit: contain;
+	flex-shrink: 0;
+}
+
+.sponsor-ticker__tagline {
+	color: var(--muted);
+	font-weight: 400;
+}
+
+.sponsor-ticker__sep {
+	color: var(--muted);
+	opacity: 0.4;
+	font-size: 0.6rem;
+	padding: 0 0.25rem;
+	flex-shrink: 0;
+}
+
 /* --- Domain migration banner --- */
 .domain-banner {
 	flex: 0 0 auto;
@@ -850,12 +931,17 @@ body {
 		display: none; /* status colors shown in detail sheet */
 	}
 	.toolbar {
-		flex-wrap: wrap;
-		gap: 0.3rem;
+		gap: 0.2rem;
 	}
 	.tbar-btn {
 		padding: 0.28rem 0.5rem;
 		font-size: 0.74rem;
+	}
+	.tbar-social__handle {
+		display: none;
+	}
+	.tbar-divider {
+		margin: 0 0.1rem;
 	}
 	.kbd {
 		display: none; /* keyboard shortcut not relevant on touch */
@@ -909,6 +995,29 @@ body {
 	padding: 0.28rem 0.42rem;
 	line-height: 1;
 	position: relative;
+}
+
+.tbar-divider {
+	width: 1px;
+	height: 18px;
+	background: var(--border);
+	margin: 0 0.2rem;
+	flex-shrink: 0;
+}
+
+.tbar-x-icon {
+	width: 13px;
+	height: 13px;
+	flex-shrink: 0;
+}
+
+.tbar-social {
+	text-decoration: none;
+}
+
+.tbar-social__handle {
+	font-size: 0.75rem;
+	font-weight: 600;
 }
 
 .tbar-badge {
