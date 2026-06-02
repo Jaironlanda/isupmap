@@ -1,6 +1,9 @@
 {
   "name": "isupmap",
   "version": "0.0.0",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "deploy": "wrangler deploy && wrangler d1 execute isupmap --remote --file=./schema.sql",
     "dev": "wrangler dev",
