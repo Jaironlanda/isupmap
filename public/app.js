@@ -49,7 +49,7 @@ function logoUrl(id) {
 }
 
 const gridEl = document.getElementById("grid");
-const updatedEl = document.getElementById("updated");
+const updatedEl = document.getElementById("updatedText");
 const toastsEl = document.getElementById("toasts");
 const tooltipEl = document.getElementById("tooltip");
 
@@ -948,6 +948,8 @@ function updateChrome(services) {
 		countEl.hidden = issues === 0;
 	}
 
+	updateStatusbar(services);
+
 	const color = { up: "#40c057", degraded: "#f0b429", down: "#fa5252" }[worstStatus(services)];
 	const canvas = document.createElement("canvas");
 	canvas.width = canvas.height = 32;
@@ -958,6 +960,64 @@ function updateChrome(services) {
 	ctx.fill();
 	faviconEl.href = canvas.toDataURL("image/png");
 }
+
+// --- Statusbar: overall summary + live per-status counts ------------------
+
+const statusSummaryEl = document.getElementById("statusSummary");
+const statusSummaryDot = statusSummaryEl?.querySelector(".statusbar__dot");
+const statusSummaryText = document.getElementById("statusSummaryText");
+const legendCountEls = {
+	up: document.querySelector('[data-count="up"]'),
+	degraded: document.querySelector('[data-count="degraded"]'),
+	down: document.querySelector('[data-count="down"]'),
+	unknown: document.querySelector('[data-count="unknown"]'),
+};
+
+function updateStatusbar(services) {
+	const counts = { up: 0, degraded: 0, down: 0, unknown: 0 };
+	for (const s of services) {
+		counts[s.status] = (counts[s.status] ?? 0) + 1;
+	}
+
+	for (const [status, el] of Object.entries(legendCountEls)) {
+		if (!el) continue;
+		el.textContent = counts[status];
+		el.closest(".legend__item")?.classList.toggle("is-empty", counts[status] === 0);
+	}
+
+	// Overall pill mirrors the worst live status with a plain-language summary.
+	const worst = worstStatus(services);
+	if (statusSummaryDot) {
+		statusSummaryDot.className = `statusbar__dot is-${worst}`;
+	}
+	if (statusSummaryText) {
+		const issues = counts.down + counts.degraded;
+		if (services.length === 0) {
+			statusSummaryText.textContent = "No services selected";
+		} else if (issues === 0) {
+			statusSummaryText.textContent = "All systems operational";
+		} else {
+			const parts = [];
+			if (counts.down) parts.push(`${counts.down} down`);
+			if (counts.degraded) parts.push(`${counts.degraded} degraded`);
+			statusSummaryText.textContent = parts.join(" · ");
+		}
+	}
+
+	// When there are issues, the pill toggles the Problems-only filter; otherwise
+	// it's purely informational.
+	const hasIssues = counts.down + counts.degraded > 0;
+	statusSummaryEl.disabled = !hasIssues && !prefs.problemsOnly;
+	statusSummaryEl.classList.toggle("is-active", prefs.problemsOnly);
+}
+
+statusSummaryEl?.addEventListener("click", () => {
+	prefs.problemsOnly = !prefs.problemsOnly;
+	savePrefs();
+	syncProblemsBtn();
+	statusSummaryEl.classList.toggle("is-active", prefs.problemsOnly);
+	renderView();
+});
 
 // --- Browser notifications ------------------------------------------------
 

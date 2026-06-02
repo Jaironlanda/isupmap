@@ -140,14 +140,37 @@
 				</a>
 			</div>
 		</header>
-		<div class="statusbar">
-			<ul class="legend" aria-label="Status legend">
-				<li><span class="swatch is-up"></span>Up</li>
-				<li><span class="swatch is-degraded"></span>Degraded</li>
-				<li><span class="swatch is-down"></span>Down</li>
-				<li><span class="swatch is-unknown"></span>Unknown</li>
+		<div class="statusbar" role="status" aria-live="polite">
+			<button id="statusSummary" class="statusbar__summary" type="button" aria-label="Overall status">
+				<span class="statusbar__dot is-unknown"></span>
+				<span id="statusSummaryText" class="statusbar__summary-text">Loading…</span>
+			</button>
+			<ul class="legend" aria-label="Status counts">
+				<li class="legend__item" data-status="up">
+					<span class="swatch is-up"></span>
+					<span class="legend__label">Up</span>
+					<span class="legend__count" data-count="up">—</span>
+				</li>
+				<li class="legend__item" data-status="degraded">
+					<span class="swatch is-degraded"></span>
+					<span class="legend__label">Degraded</span>
+					<span class="legend__count" data-count="degraded">—</span>
+				</li>
+				<li class="legend__item" data-status="down">
+					<span class="swatch is-down"></span>
+					<span class="legend__label">Down</span>
+					<span class="legend__count" data-count="down">—</span>
+				</li>
+				<li class="legend__item" data-status="unknown">
+					<span class="swatch is-unknown"></span>
+					<span class="legend__label">Unknown</span>
+					<span class="legend__count" data-count="unknown">—</span>
+				</li>
 			</ul>
-			<span id="updated" class="updated">Loading…</span>
+			<span id="updated" class="updated">
+				<span class="updated__pulse" aria-hidden="true"></span>
+				<span id="updatedText">Loading…</span>
+			</span>
 		</div>
 
 		<main id="grid" class="grid" aria-live="polite">
