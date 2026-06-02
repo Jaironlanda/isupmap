@@ -13,8 +13,16 @@ Freshly scaffolded Cloudflare Worker (`create-cloudflare` CLI). Currently a **st
 | `npm run dev` (or `npx wrangler dev`) | Local development server |
 | `npm run deploy` (or `npx wrangler deploy`) | Deploy to Cloudflare |
 | `npx wrangler types` | Regenerate TypeScript types — **run after any binding change in wrangler.jsonc** |
+| `npm test` (or `npm run test:watch`) | Run the Vitest suite |
+| `npm run typecheck` | Type-check without emitting |
 
-No test or lint tooling is configured yet.
+Tests use **Vitest** with the Cloudflare Workers pool (`@cloudflare/vitest-pool-workers`),
+so they run inside workerd with real bindings. Config is [vitest.config.mts](vitest.config.mts)
+(`.mts` because the pool is ESM-only); specs live in [test/](test/). [test/db.test.ts](test/db.test.ts)
+exercises the D1 layer against a real local D1 (schema applied from [schema.sql](schema.sql)
+in `beforeAll`); [test/sources.test.ts](test/sources.test.ts) stubs the global `fetch`.
+No lint tooling is configured yet. CI runs typecheck + tests on PRs via
+[.github/workflows/ci.yml](.github/workflows/ci.yml).
 
 ## Cloudflare Workers guidance
 

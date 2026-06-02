@@ -8,6 +8,8 @@
     "start": "wrangler dev",
     "types": "wrangler types",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:schema:local": "wrangler d1 execute isupmap --local --file=./schema.sql",
     "db:schema:remote": "wrangler d1 execute isupmap --remote --file=./schema.sql"
   },
@@ -15,7 +17,9 @@
     "fast-xml-parser": "^4.5.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.11",
     "typescript": "^5.7.0",
+    "vitest": "^4.1.8",
     "wrangler": "^4.95.0"
   }
 }
