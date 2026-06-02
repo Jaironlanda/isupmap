@@ -5,7 +5,7 @@
 **Live: [isUpMap](https://isupmap.com)** (Official)
 **Live: [map.warmindex.com](https://map.warmindex.com)** (Backup)
 
-A live **up / down heatmap** for 60+ popular internet services, rendered as a
+A live **up / down heatmap** for 80+ popular internet services, rendered as a
 stock-map style treemap with brand logos. Built on a single
 [Cloudflare Worker](https://developers.cloudflare.com/workers/): a **Cron
 Trigger** polls each service's official status and persists snapshots + an
@@ -109,6 +109,15 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Bunny.net | Developer & Cloud | Statuspage | `https://status.bunny.net` |
 | Auth0 | Developer & Cloud | Statuspage | `https://auth0.statuspage.io` |
 | Clerk | Developer & Cloud | Statuspage | `https://status.clerk.com` |
+| HashiCorp | Developer & Cloud | Statuspage | `https://status.hashicorp.com` |
+| Snowflake | Developer & Cloud | Statuspage | `https://status.snowflake.com` |
+| Elastic | Developer & Cloud | Statuspage | `https://status.elastic.co` |
+| New Relic | Developer & Cloud | Statuspage | `https://status.newrelic.com` |
+| Grafana | Developer & Cloud | Statuspage | `https://status.grafana.com` |
+| PagerDuty | Developer & Cloud | RSS | `https://status.pagerduty.com/history.rss` |
+| Algolia | Developer & Cloud | RSS | `https://status.algolia.com/history.rss` |
+| GitLab | Developer & Cloud | RSS | `https://status.gitlab.com/pages/5b36dc6502d06804c08349f7/rss` |
+| Docker | Developer & Cloud | RSS | `https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss` |
 | OpenAI | AI | Statuspage | `https://status.openai.com` |
 | Anthropic | AI | Statuspage | `https://status.claude.com` |
 | xAI | AI | RSS | `https://status.x.ai/feed.xml` |
@@ -122,12 +131,16 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Together AI | AI | RSS | `https://status.together.ai/feed.rss` |
 | Perplexity | AI | RSS | `https://status.perplexity.com/default/history.rss` |
 | Stability AI | AI | Statuspage | `https://status.stability.ai` |
+| Deepgram | AI | Statuspage | `https://status.deepgram.com` |
+| AssemblyAI | AI | Statuspage | `https://status.assemblyai.com` |
 | Stripe | Payments | Statuspage | `https://www.stripestatus.com` |
 | Coinbase | Payments | Statuspage | `https://status.coinbase.com` |
 | Shopify | Payments | Statuspage | `https://www.shopifystatus.com` |
 | Plaid | Payments | Statuspage | `https://status.plaid.com` |
 | Paddle | Payments | Statuspage | `https://paddlestatus.com` |
 | Lemon Squeezy | Payments | RSS | `https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss` |
+| Square | Payments | Statuspage | `https://www.issquareup.com` |
+| Klarna | Payments | Statuspage | `https://status.klarna.com` |
 | Discord | Communication | Statuspage | `https://discordstatus.com` |
 | Slack | Communication | Slack API | `https://slack-status.com/api/v2.0.0/current` |
 | Zoom | Communication | Statuspage | `https://www.zoomstatus.com` |
@@ -135,6 +148,8 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | SendGrid | Communication | Statuspage | `https://status.sendgrid.com` |
 | Resend | Communication | Statuspage | `https://resend-status.com` |
 | Mailgun | Communication | Statuspage | `https://status.mailgun.com` |
+| Intercom | Communication | Statuspage | `https://www.intercomstatus.com` |
+| HubSpot | Communication | Statuspage | `https://status.hubspot.com` |
 | Atlassian | Productivity & Media | Statuspage | `https://status.atlassian.com` |
 | Dropbox | Productivity & Media | Statuspage | `https://status.dropbox.com` |
 | Datadog | Productivity & Media | Statuspage | `https://status.datadoghq.com` |
@@ -146,10 +161,20 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Linear | Productivity & Media | Statuspage | `https://linearstatus.com` |
 | Notion | Productivity & Media | Statuspage | `https://www.notion-status.com` |
 | Cloudinary | Productivity & Media | Statuspage | `https://status.cloudinary.com` |
+| Asana | Productivity & Media | Statuspage | `https://status.asana.com` |
+| Airtable | Productivity & Media | Statuspage | `https://status.airtable.com` |
+| Miro | Productivity & Media | Statuspage | `https://status.miro.com` |
+| Canva | Productivity & Media | Statuspage | `https://www.canvastatus.com` |
+| Webflow | Productivity & Media | Statuspage | `https://status.webflow.com` |
+| DocuSign | Productivity & Media | Statuspage | `https://status.docusign.com` |
 | Twitch | Gaming & Entertainment | Statuspage | `https://status.twitch.com` |
 | Epic Games | Gaming & Entertainment | Statuspage | `https://status.epicgames.com` |
 | Netflix | Gaming & Entertainment | HTTP ping | `https://www.netflix.com` |
 | Roblox | Gaming & Entertainment | RSS | `https://status.roblox.com/pages/59db90dbcdeb2f04dadcf16d/rss` |
+| Steam | Gaming & Entertainment | HTTP ping | `https://store.steampowered.com` |
+| PlayStation Network | Gaming & Entertainment | HTTP ping | `https://www.playstation.com` |
+| Riot Games | Gaming & Entertainment | HTTP ping | `https://www.riotgames.com` |
+| Spotify | Gaming & Entertainment | HTTP ping | `https://open.spotify.com` |
 
 To add a service, append an entry to [src/services.ts](src/services.ts) with its
 `category`, a `weight` (tile size), and a `source`. Brand logos are mapped by

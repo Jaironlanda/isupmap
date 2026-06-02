@@ -86,6 +86,18 @@ export const SERVICES: Service[] = [
 	// Auth0's Statuspage lives at auth0.statuspage.io (status.auth0.com lacks the JSON API).
 	{ id: "auth0", name: "Auth0", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://auth0.statuspage.io" } },
 	{ id: "clerk", name: "Clerk", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.clerk.com" } },
+	{ id: "hashicorp", name: "HashiCorp", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.hashicorp.com" } },
+	{ id: "snowflake", name: "Snowflake", category: "Developer & Cloud", weight: 6, source: { type: "statuspage", base: "https://status.snowflake.com" } },
+	{ id: "elastic", name: "Elastic", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.elastic.co" } },
+	{ id: "newrelic", name: "New Relic", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.newrelic.com" } },
+	{ id: "grafana", name: "Grafana", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.grafana.com" } },
+	// PagerDuty & Algolia gate their Statuspage JSON API (403/empty) but leave the RSS feed open.
+	{ id: "pagerduty", name: "PagerDuty", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://status.pagerduty.com/history.rss" } },
+	{ id: "algolia", name: "Algolia", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://status.algolia.com/history.rss" } },
+	// GitLab uses status.io (not Atlassian Statuspage) — RSS is the reliable path.
+	{ id: "gitlab", name: "GitLab", category: "Developer & Cloud", weight: 6, source: { type: "rss", url: "https://status.gitlab.com/pages/5b36dc6502d06804c08349f7/rss" } },
+	// Docker uses status.io (not Atlassian Statuspage) — RSS is the reliable path.
+	{ id: "docker", name: "Docker", category: "Developer & Cloud", weight: 6, source: { type: "rss", url: "https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss" } },
 
 	// --- AI ---
 	{ id: "openai", name: "OpenAI", category: "AI", weight: 8, source: { type: "statuspage", base: "https://status.openai.com" } },
@@ -106,6 +118,8 @@ export const SERVICES: Service[] = [
 	// Perplexity uses Instatus — RSS feed confirmed working.
 	{ id: "perplexity", name: "Perplexity", category: "AI", weight: 6, source: { type: "rss", url: "https://status.perplexity.com/default/history.rss" } },
 	{ id: "stability", name: "Stability AI", category: "AI", weight: 5, source: { type: "statuspage", base: "https://status.stability.ai" } },
+	{ id: "deepgram", name: "Deepgram", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.deepgram.com" } },
+	{ id: "assemblyai", name: "AssemblyAI", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.assemblyai.com" } },
 
 	// --- Payments ---
 	{ id: "stripe", name: "Stripe", category: "Payments", weight: 7, source: { type: "statuspage", base: "https://www.stripestatus.com" } },
@@ -115,6 +129,8 @@ export const SERVICES: Service[] = [
 	{ id: "paddle", name: "Paddle", category: "Payments", weight: 3, source: { type: "statuspage", base: "https://paddlestatus.com" } },
 	// Lemon Squeezy uses Oh Dear for status — RSS is the reliable path.
 	{ id: "lemonsqueezy", name: "Lemon Squeezy", category: "Payments", weight: 3, source: { type: "rss", url: "https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss" } },
+	{ id: "square", name: "Square", category: "Payments", weight: 5, source: { type: "statuspage", base: "https://www.issquareup.com" } },
+	{ id: "klarna", name: "Klarna", category: "Payments", weight: 4, source: { type: "statuspage", base: "https://status.klarna.com" } },
 
 	// --- Communication ---
 	{ id: "discord", name: "Discord", category: "Communication", weight: 6, source: { type: "statuspage", base: "https://discordstatus.com" } },
@@ -124,6 +140,8 @@ export const SERVICES: Service[] = [
 	{ id: "sendgrid", name: "SendGrid", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.sendgrid.com" } },
 	{ id: "resend", name: "Resend", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://resend-status.com" } },
 	{ id: "mailgun", name: "Mailgun", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.mailgun.com" } },
+	{ id: "intercom", name: "Intercom", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://www.intercomstatus.com" } },
+	{ id: "hubspot", name: "HubSpot", category: "Communication", weight: 5, source: { type: "statuspage", base: "https://status.hubspot.com" } },
 
 	// --- Productivity & Media ---
 	{ id: "atlassian", name: "Atlassian", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.atlassian.com" } },
@@ -138,6 +156,12 @@ export const SERVICES: Service[] = [
 	{ id: "linear", name: "Linear", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://linearstatus.com" } },
 	{ id: "notion", name: "Notion", category: "Productivity & Media", weight: 7, source: { type: "statuspage", base: "https://www.notion-status.com" } },
 	{ id: "cloudinary", name: "Cloudinary", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.cloudinary.com" } },
+	{ id: "asana", name: "Asana", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.asana.com" } },
+	{ id: "airtable", name: "Airtable", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.airtable.com" } },
+	{ id: "miro", name: "Miro", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.miro.com" } },
+	{ id: "canva", name: "Canva", category: "Productivity & Media", weight: 6, source: { type: "statuspage", base: "https://www.canvastatus.com" } },
+	{ id: "webflow", name: "Webflow", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.webflow.com" } },
+	{ id: "docusign", name: "DocuSign", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.docusign.com" } },
 
 	// --- Gaming & Entertainment ---
 	{ id: "twitch", name: "Twitch", category: "Gaming & Entertainment", weight: 7, source: { type: "statuspage", base: "https://status.twitch.com" } },
@@ -147,4 +171,9 @@ export const SERVICES: Service[] = [
 	{ id: "netflix", name: "Netflix", category: "Gaming & Entertainment", weight: 9, source: { type: "http", url: "https://www.netflix.com" } },
 	// Roblox uses status.io — RSS is the reliable path.
 	{ id: "roblox", name: "Roblox", category: "Gaming & Entertainment", weight: 8, source: { type: "rss", url: "https://status.roblox.com/pages/59db90dbcdeb2f04dadcf16d/rss" } },
+	// The services below lack a public status JSON/RSS feed, so we fall back to reachability pings.
+	{ id: "steam", name: "Steam", category: "Gaming & Entertainment", weight: 8, source: { type: "http", url: "https://store.steampowered.com" } },
+	{ id: "playstation", name: "PlayStation Network", category: "Gaming & Entertainment", weight: 7, source: { type: "http", url: "https://www.playstation.com" } },
+	{ id: "riot", name: "Riot Games", category: "Gaming & Entertainment", weight: 6, source: { type: "http", url: "https://www.riotgames.com" } },
+	{ id: "spotify", name: "Spotify", category: "Gaming & Entertainment", weight: 9, source: { type: "http", url: "https://open.spotify.com" } },
 ];
