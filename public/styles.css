@@ -239,7 +239,8 @@ body {
 	flex: 0 0 auto;
 	display: flex;
 	align-items: center;
-	gap: 0.75rem;
+	flex-wrap: wrap; /* wrap onto a second line on narrow widths rather than overflow */
+	gap: 0.3rem 0.75rem;
 	padding: 0.3rem 1rem;
 	border-bottom: 1px solid var(--border);
 	background: var(--bg);
@@ -1178,11 +1179,23 @@ body {
 		display: none;
 	}
 	.statusbar {
-		padding: 0.25rem 0.6rem;
-		gap: 0.5rem;
+		padding: 0.3rem 0.6rem;
+		gap: 0.3rem 0.5rem;
+		flex-wrap: wrap; /* let the timestamp drop to its own line instead of overflowing */
+	}
+	/* Allow the summary pill to shrink and ellipsis its text rather than push siblings off-screen. */
+	.statusbar__summary {
+		min-width: 0;
+		flex: 0 1 auto;
+	}
+	.statusbar__summary-text {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.legend {
 		gap: 0.15rem;
+		flex: 0 0 auto;
 	}
 	/* Tighten count chips on mobile: drop labels, keep colored dot + number. */
 	.legend__item {
@@ -1195,6 +1208,9 @@ body {
 	.legend__item[data-status="up"],
 	.legend__item[data-status="unknown"].is-empty {
 		display: none;
+	}
+	.updated {
+		font-size: 0.7rem;
 	}
 	.updated__pulse {
 		display: none;
