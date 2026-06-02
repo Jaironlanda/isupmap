@@ -430,6 +430,37 @@ body {
 	color: #fff;
 }
 
+/* Text labels on the icon buttons: hidden in the compact toolbar, revealed
+   when the buttons are relocated into the phone sidebar. */
+.tbar-btn__label {
+	display: none;
+}
+
+/* Hamburger: only shown on phones (see the max-width media query). */
+.header__menu {
+	display: none;
+	justify-self: end;
+	align-items: center;
+	justify-content: center;
+	background: var(--panel);
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 0.32rem;
+	cursor: pointer;
+}
+
+.header__menu:hover {
+	border-color: var(--muted);
+}
+
+.header__menu svg,
+.header__menu i[data-lucide] {
+	width: 20px;
+	height: 20px;
+	stroke-width: 2;
+}
+
 .kbd {
 	font-size: 0.68rem;
 	font-weight: 600;
@@ -762,6 +793,140 @@ body {
 	color: var(--muted);
 	text-align: center;
 	padding: 2rem 0;
+}
+
+/* --- Phone sidebar (hamburger drawer) --- */
+.sidebar-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 65;
+	background: rgba(0, 0, 0, 0.5);
+	opacity: 0;
+	transition: opacity 0.2s ease;
+}
+.sidebar-overlay.is-open {
+	opacity: 1;
+}
+.sidebar-overlay[hidden] {
+	display: none;
+}
+
+.sidebar {
+	position: fixed;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: min(320px, 86vw);
+	z-index: 70;
+	background: var(--panel);
+	border-left: 1px solid var(--border);
+	box-shadow: -10px 0 30px rgba(0, 0, 0, 0.45);
+	display: flex;
+	flex-direction: column;
+	transform: translateX(100%);
+	transition: transform 0.22s ease;
+}
+.sidebar.is-open {
+	transform: translateX(0);
+}
+.sidebar[hidden] {
+	display: none;
+}
+
+.sidebar__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0.9rem 1rem;
+	border-bottom: 1px solid var(--border);
+}
+.sidebar__title {
+	font-weight: 700;
+	font-size: 1rem;
+}
+.sidebar__close {
+	background: none;
+	border: none;
+	color: var(--muted);
+	font-size: 1.4rem;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0 0.25rem;
+}
+.sidebar__close:hover {
+	color: var(--text);
+}
+.sidebar__body {
+	flex: 1;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 0.75rem;
+}
+
+/* Toolbar relocated into the drawer: stack as a full-width vertical menu. */
+.sidebar .toolbar {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.25rem;
+}
+.sidebar .tbar-btn {
+	width: 100%;
+	justify-content: flex-start;
+	gap: 0.6rem;
+	padding: 0.6rem 0.7rem;
+	font-size: 0.9rem;
+}
+.sidebar .tbar-btn__label {
+	display: inline;
+}
+.sidebar .tbar-social__handle {
+	display: inline;
+}
+/* The problems badge sits inline next to the label rather than floating. */
+.sidebar .tbar-badge {
+	position: static;
+	margin-left: auto;
+}
+/* Divider becomes a horizontal rule between sections. */
+.sidebar .tbar-divider {
+	width: 100%;
+	height: 1px;
+	margin: 0.4rem 0;
+}
+
+/* Statusbar relocated into the drawer: vertical, borderless block. */
+.sidebar .statusbar {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.6rem;
+	padding: 0.25rem 0.2rem;
+	border-bottom: none;
+}
+.sidebar .statusbar__summary {
+	justify-content: flex-start;
+}
+.sidebar .legend {
+	flex-wrap: wrap;
+	gap: 0.3rem;
+}
+/* Extra `.statusbar` in the chain raises specificity so these win over the
+   compact-header hide rules in the max-width media query regardless of order. */
+.sidebar .statusbar .legend__item,
+.sidebar .statusbar .legend__item.is-empty {
+	display: flex; /* show every chip (incl. up/unknown) inside the drawer */
+}
+.sidebar .statusbar .legend__label {
+	display: inline; /* show labels again inside the drawer */
+}
+.sidebar .updated {
+	margin-left: 0;
+}
+.sidebar .updated__pulse {
+	display: inline-block;
 }
 
 .incident {
@@ -1171,6 +1336,10 @@ body {
 		gap: 0.4rem 0.5rem;
 		padding: 0.4rem 0.6rem;
 	}
+	/* Hamburger takes the third header slot; the toolbar moves into the drawer. */
+	.header__menu {
+		display: inline-flex;
+	}
 	.header__search {
 		padding: 0.38rem 0.6rem;
 		font-size: 0.8rem;
@@ -1178,55 +1347,12 @@ body {
 	.header__search-placeholder {
 		display: none;
 	}
+	/* The toolbar + statusbar are relocated into the drawer by app.js. Hide them
+	   in their original spots so they don't flash before relocation; the in-drawer
+	   appearance is defined by the `.sidebar …` rules outside this media query. */
+	.toolbar,
 	.statusbar {
-		padding: 0.3rem 0.6rem;
-		gap: 0.3rem 0.5rem;
-		flex-wrap: wrap; /* let the timestamp drop to its own line instead of overflowing */
-	}
-	/* Allow the summary pill to shrink and ellipsis its text rather than push siblings off-screen. */
-	.statusbar__summary {
-		min-width: 0;
-		flex: 0 1 auto;
-	}
-	.statusbar__summary-text {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.legend {
-		gap: 0.15rem;
-		flex: 0 0 auto;
-	}
-	/* Tighten count chips on mobile: drop labels, keep colored dot + number. */
-	.legend__item {
-		padding: 0.18rem 0.3rem;
-	}
-	.legend__label {
 		display: none;
-	}
-	/* The "up" count is implied by the summary pill; hide it to save room. */
-	.legend__item[data-status="up"],
-	.legend__item[data-status="unknown"].is-empty {
-		display: none;
-	}
-	.updated {
-		font-size: 0.7rem;
-	}
-	.updated__pulse {
-		display: none;
-	}
-	.toolbar {
-		gap: 0.2rem;
-	}
-	.tbar-btn {
-		padding: 0.28rem 0.5rem;
-		font-size: 0.74rem;
-	}
-	.tbar-social__handle {
-		display: none;
-	}
-	.tbar-divider {
-		margin: 0 0.1rem;
 	}
 	.kbd {
 		display: none; /* keyboard shortcut not relevant on touch */
