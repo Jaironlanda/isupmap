@@ -708,6 +708,34 @@ body {
 	}
 }
 
+/* Spotlight: after picking a service from search, dim and blur every other
+   tile for ~30s so the chosen one stands out. The picked tile keeps the
+   .tile--flash outline above and is pulled forward. */
+.grid--focus .tile {
+	transition: filter 0.45s ease, opacity 0.45s ease, transform 0.45s ease;
+}
+
+.grid--focus .tile:not(.tile--flash) {
+	filter: blur(2px) brightness(0.42) saturate(0.7);
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+.grid--focus .tile--flash {
+	transform: scale(1.04);
+	z-index: 6;
+	box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.grid--focus .tile {
+		transition: none;
+	}
+	.grid--focus .tile--flash {
+		transform: none;
+	}
+}
+
 .tile__logo {
 	flex: 0 0 auto;
 	margin-bottom: 0.25rem;

@@ -103,6 +103,7 @@ function renderView() {
 				? "✓ All selected services are operational"
 				: "No services selected — open Customize to add some.";
 		gridEl.innerHTML = `<p class="grid__empty">${escapeHtml(msg)}</p>`;
+		gridEl.classList.remove("grid--focus");
 		return;
 	}
 	render(v);
@@ -235,6 +236,8 @@ function render(services) {
 		frag.appendChild(renderSector(rect));
 	}
 	gridEl.replaceChildren(frag);
+	// Spotlight mode: dim/blur everything but the picked tile while a focus is active.
+	gridEl.classList.toggle("grid--focus", highlightId != null);
 }
 
 function renderSector(rect) {
@@ -773,6 +776,20 @@ paletteEl.addEventListener("click", (e) => {
 });
 document.getElementById("searchBtn").addEventListener("click", openPalette);
 
+/** End spotlight mode: drop the highlight, timer, and outside-click listener. */
+function clearSpotlight() {
+	if (highlightId == null) return;
+	highlightId = null;
+	clearTimeout(highlightTimer);
+	document.removeEventListener("pointerdown", onSpotlightOutside, true);
+	renderView();
+}
+
+/** Cancel the spotlight when the user clicks anywhere but the focused tile. */
+function onSpotlightOutside(e) {
+	if (!e.target.closest?.(".tile--flash")) clearSpotlight();
+}
+
 /** Bring a service into view and flash it (used by the palette). */
 function focusService(id) {
 	prefs.hidden.delete(id);
@@ -783,10 +800,11 @@ function focusService(id) {
 	highlightId = id;
 	renderView();
 	clearTimeout(highlightTimer);
-	highlightTimer = setTimeout(() => {
-		highlightId = null;
-		renderView();
-	}, 2600);
+	highlightTimer = setTimeout(clearSpotlight, 30_000);
+	// Dismiss on any click outside the spotlighted tile. Deferred so the click
+	// that opened the spotlight (the palette pick) doesn't immediately cancel it.
+	document.removeEventListener("pointerdown", onSpotlightOutside, true);
+	setTimeout(() => document.addEventListener("pointerdown", onSpotlightOutside, true), 0);
 }
 
 // --- Theme ----------------------------------------------------------------
