@@ -167,9 +167,27 @@
 				<h2>Customize</h2>
 				<button id="customizeClose" class="panel__close" type="button" aria-label="Close">×</button>
 			</div>
+			<div class="cz-search">
+				<i data-lucide="search" class="cz-search__icon" aria-hidden="true"></i>
+				<input
+					id="customizeSearch"
+					class="cz-search__input"
+					type="search"
+					placeholder="Search services or categories…"
+					autocomplete="off"
+					spellcheck="false"
+					aria-label="Search services to customize"
+				/>
+				<button id="customizeSearchClear" class="cz-search__clear" type="button" aria-label="Clear search" hidden>
+					<i data-lucide="x" aria-hidden="true"></i>
+				</button>
+			</div>
 			<div class="panel__sub">
 				<span id="customizeCount"></span>
-				<button id="customizeReset" class="link-btn" type="button">Reset</button>
+				<div class="cz-sub-actions">
+					<button id="customizeCollapse" class="link-btn" type="button" aria-expanded="true">Collapse all</button>
+					<button id="customizeReset" class="link-btn" type="button">Reset</button>
+				</div>
 			</div>
 			<label class="cz-toggle">
 				<input id="notifyToggle" type="checkbox" />

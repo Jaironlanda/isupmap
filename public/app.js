@@ -564,13 +564,24 @@ const customizeClose = document.getElementById("customizeClose");
 const customizePanel = document.getElementById("customizePanel");
 const customizeList = document.getElementById("customizeList");
 const customizeReset = document.getElementById("customizeReset");
+const customizeSearch = document.getElementById("customizeSearch");
+const customizeSearchClear = document.getElementById("customizeSearchClear");
+const customizeCollapse = document.getElementById("customizeCollapse");
+
+// Local-only UI state for the panel (not persisted).
+let czQuery = "";
+const czCollapsed = new Set();
 
 function toggleCustomize(open) {
 	const show = open ?? customizePanel.hidden;
 	if (show) closePanels({ except: "customize" });
 	customizePanel.hidden = !show;
 	customizeBtn.setAttribute("aria-expanded", String(show));
-	if (show) renderCustomize();
+	if (show) {
+		renderCustomize();
+		// Defer focus so the panel is visible before we grab the caret.
+		requestAnimationFrame(() => customizeSearch.focus());
+	}
 }
 
 function renderCustomize() {
@@ -585,26 +596,64 @@ function renderCustomize() {
 	}
 
 	const shown = latest.filter((s) => !prefs.hidden.has(s.id)).length;
-	document.getElementById("customizeCount").textContent = `${shown} of ${latest.length} shown`;
+	const countEl = document.getElementById("customizeCount");
+	const searching = czQuery.length > 0;
 
+	let matchCount = 0;
 	let html = "";
 	for (const [category, items] of byCategory) {
+		// While searching, keep services whose name OR category matches.
+		const matches = searching
+			? items.filter((s) => fuzzyMatch(czQuery, `${s.name} ${s.category}`))
+			: items;
+		if (matches.length === 0) continue;
+		matchCount += matches.length;
+
 		const allShown = items.every((s) => !prefs.hidden.has(s.id));
-		html += `<div class="cz-group">
-			<label class="cz-row cz-row--head">
-				<input type="checkbox" data-category="${escapeHtml(category)}" ${allShown ? "checked" : ""} />
-				<span>${escapeHtml(category)}</span>
-			</label>`;
-		for (const svc of items) {
+		const shownInCat = items.filter((s) => !prefs.hidden.has(s.id)).length;
+		// Searching force-expands so matches are always visible.
+		const collapsed = !searching && czCollapsed.has(category);
+
+		html += `<div class="cz-group${collapsed ? " is-collapsed" : ""}">
+			<div class="cz-group__head" data-category-head="${escapeHtml(category)}" role="button" tabindex="0" aria-expanded="${collapsed ? "false" : "true"}">
+				<i data-lucide="chevron-down" class="cz-group__chevron" aria-hidden="true"></i>
+				<input class="cz-group__check" type="checkbox" data-category="${escapeHtml(category)}" ${allShown ? "checked" : ""} aria-label="Toggle all ${escapeHtml(category)}" />
+				<span class="cz-group__name">${escapeHtml(category)}</span>
+				<span class="cz-group__count">${shownInCat}/${items.length}</span>
+			</div>
+			<div class="cz-group__body">`;
+		for (const svc of matches) {
 			html += `<label class="cz-row">
 				<input type="checkbox" data-id="${escapeHtml(svc.id)}" ${prefs.hidden.has(svc.id) ? "" : "checked"} />
 				<span class="dot is-${svc.status}"></span>
 				<span>${escapeHtml(svc.name)}</span>
 			</label>`;
 		}
-		html += `</div>`;
+		html += `</div></div>`;
 	}
+
+	if (searching && matchCount === 0) {
+		html = `<p class="panel__empty">No services match “${escapeHtml(czQuery)}”.</p>`;
+		countEl.textContent = `0 matches`;
+	} else {
+		countEl.textContent = searching
+			? `${matchCount} match${matchCount === 1 ? "" : "es"}`
+			: `${shown} of ${latest.length} shown`;
+	}
+
 	customizeList.innerHTML = html;
+	const icons = [...customizeList.querySelectorAll("i[data-lucide]")];
+	if (icons.length) lucide.createIcons({ nodes: icons });
+	syncCollapseBtn();
+}
+
+// Reflect whether every category is currently collapsed in the toggle label.
+function syncCollapseBtn() {
+	if (!latest) return;
+	const categories = [...new Set(latest.map((s) => s.category))];
+	const allCollapsed = categories.length > 0 && categories.every((c) => czCollapsed.has(c));
+	customizeCollapse.textContent = allCollapsed ? "Expand all" : "Collapse all";
+	customizeCollapse.setAttribute("aria-expanded", String(!allCollapsed));
 }
 
 // Delegated change handler for the customize checkboxes.
@@ -622,6 +671,49 @@ customizeList.addEventListener("change", (e) => {
 	}
 	savePrefs();
 	renderView();
+	renderCustomize();
+});
+
+// Click/keyboard on a category header (but not its checkbox) collapses it.
+function toggleCategory(category) {
+	if (czCollapsed.has(category)) czCollapsed.delete(category);
+	else czCollapsed.add(category);
+	renderCustomize();
+}
+customizeList.addEventListener("click", (e) => {
+	const head = e.target.closest(".cz-group__head");
+	if (!head || e.target.closest(".cz-group__check")) return;
+	if (czQuery) return; // headers are non-collapsible while searching
+	toggleCategory(head.dataset.categoryHead);
+});
+customizeList.addEventListener("keydown", (e) => {
+	if (e.key !== "Enter" && e.key !== " ") return;
+	const head = e.target.closest(".cz-group__head");
+	if (!head || e.target.closest(".cz-group__check") || czQuery) return;
+	e.preventDefault();
+	toggleCategory(head.dataset.categoryHead);
+});
+
+// Search box: filter the list as the user types.
+customizeSearch.addEventListener("input", () => {
+	czQuery = customizeSearch.value.trim();
+	customizeSearchClear.hidden = czQuery.length === 0;
+	renderCustomize();
+});
+customizeSearchClear.addEventListener("click", () => {
+	customizeSearch.value = "";
+	czQuery = "";
+	customizeSearchClear.hidden = true;
+	renderCustomize();
+	customizeSearch.focus();
+});
+
+// Collapse-all / expand-all toggle.
+customizeCollapse.addEventListener("click", () => {
+	const categories = [...new Set((latest ?? []).map((s) => s.category))];
+	const allCollapsed = categories.length > 0 && categories.every((c) => czCollapsed.has(c));
+	if (allCollapsed) czCollapsed.clear();
+	else for (const c of categories) czCollapsed.add(c);
 	renderCustomize();
 });
 
