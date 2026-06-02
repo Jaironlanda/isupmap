@@ -116,23 +116,31 @@
 				<span class="header__search-placeholder">Search services or run a command…</span>
 				<span class="kbd">⌘K</span>
 			</button>
+			<button id="menuBtn" class="header__menu" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">
+				<i data-lucide="menu"></i>
+			</button>
 			<div class="toolbar">
 				<button id="problemsBtn" class="tbar-btn tbar-btn--icon" type="button" aria-pressed="false" title="Problems only">
 					<i data-lucide="alert-triangle"></i>
+					<span class="tbar-btn__label">Problems only</span>
 					<span id="problemsCount" class="tbar-badge" hidden>0</span>
 				</button>
 				<button id="customizeBtn" class="tbar-btn tbar-btn--icon" type="button" aria-expanded="false" aria-controls="customizePanel" title="Customize">
 					<i data-lucide="sliders-horizontal"></i>
+					<span class="tbar-btn__label">Customize</span>
 				</button>
 				<button id="incidentsBtn" class="tbar-btn tbar-btn--icon" type="button" aria-expanded="false" aria-controls="incidentsPanel" title="Incidents">
 					<i data-lucide="activity"></i>
+					<span class="tbar-btn__label">Incidents</span>
 				</button>
 				<button id="themeBtn" class="tbar-btn tbar-btn--icon" type="button" title="Toggle theme">
 					<i data-lucide="sun"></i>
+					<span class="tbar-btn__label">Toggle theme</span>
 				</button>
 				<span class="tbar-divider" aria-hidden="true"></span>
 				<a href="https://github.com/Jaironlanda/isupmap" class="tbar-btn tbar-btn--icon" target="_blank" rel="noopener" title="View on GitHub">
 					<svg class="tbar-x-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.021c0 4.428 2.865 8.184 6.839 9.504.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.605-3.369-1.342-3.369-1.342-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.026 2.747-1.026.546 1.378.202 2.397.1 2.65.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482C19.138 20.2 22 16.447 22 12.021 22 6.484 17.522 2 12 2z"/></svg>
+					<span class="tbar-btn__label">GitHub</span>
 				</a>
 				<a href="https://x.com/JaironDevNull" class="tbar-btn tbar-social" target="_blank" rel="noopener" title="@JaironDevNull on X">
 					<svg class="tbar-x-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622Zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
@@ -140,15 +148,50 @@
 				</a>
 			</div>
 		</header>
-		<div class="statusbar">
-			<ul class="legend" aria-label="Status legend">
-				<li><span class="swatch is-up"></span>Up</li>
-				<li><span class="swatch is-degraded"></span>Degraded</li>
-				<li><span class="swatch is-down"></span>Down</li>
-				<li><span class="swatch is-unknown"></span>Unknown</li>
+		<div class="statusbar" role="status" aria-live="polite">
+			<button id="statusSummary" class="statusbar__summary" type="button" aria-label="Overall status">
+				<span class="statusbar__dot is-unknown"></span>
+				<span id="statusSummaryText" class="statusbar__summary-text">Loading…</span>
+			</button>
+			<ul class="legend" aria-label="Status counts">
+				<li class="legend__item" data-status="up">
+					<span class="swatch is-up"></span>
+					<span class="legend__label">Up</span>
+					<span class="legend__count" data-count="up">—</span>
+				</li>
+				<li class="legend__item" data-status="degraded">
+					<span class="swatch is-degraded"></span>
+					<span class="legend__label">Degraded</span>
+					<span class="legend__count" data-count="degraded">—</span>
+				</li>
+				<li class="legend__item" data-status="down">
+					<span class="swatch is-down"></span>
+					<span class="legend__label">Down</span>
+					<span class="legend__count" data-count="down">—</span>
+				</li>
+				<li class="legend__item" data-status="unknown">
+					<span class="swatch is-unknown"></span>
+					<span class="legend__label">Unknown</span>
+					<span class="legend__count" data-count="unknown">—</span>
+				</li>
 			</ul>
-			<span id="updated" class="updated">Loading…</span>
+			<span id="updated" class="updated">
+				<span class="updated__pulse" aria-hidden="true"></span>
+				<span id="updatedText">Loading…</span>
+			</span>
 		</div>
+
+		<!-- Phone-only off-canvas menu. On small screens the toolbar + statusbar
+		     are relocated into #sidebarBody by app.js; on larger screens they stay
+		     in the header/status row and this drawer is unused. -->
+		<div id="sidebarOverlay" class="sidebar-overlay" hidden></div>
+		<aside id="sidebar" class="sidebar" aria-label="Menu" hidden>
+			<div class="sidebar__head">
+				<span class="sidebar__title">Menu</span>
+				<button id="sidebarClose" class="sidebar__close" type="button" aria-label="Close menu">×</button>
+			</div>
+			<div id="sidebarBody" class="sidebar__body"></div>
+		</aside>
 
 		<main id="grid" class="grid" aria-live="polite">
 			<p class="grid__loading">Fetching service status…</p>

@@ -49,7 +49,7 @@ function logoUrl(id) {
 }
 
 const gridEl = document.getElementById("grid");
-const updatedEl = document.getElementById("updated");
+const updatedEl = document.getElementById("updatedText");
 const toastsEl = document.getElementById("toasts");
 const tooltipEl = document.getElementById("tooltip");
 
@@ -732,6 +732,7 @@ customizeClose.addEventListener("click", () => toggleCustomize(false));
 function closePanels({ except } = {}) {
 	if (except !== "incidents") toggleIncidentsClosed();
 	if (except !== "customize") customizePanel.hidden = true;
+	if (except !== "sidebar") closeSidebar();
 	closeDetail();
 }
 // Avoid recursion: close incidents without re-triggering closePanels.
@@ -739,6 +740,78 @@ function toggleIncidentsClosed() {
 	incidentsPanel.hidden = true;
 	incidentsBtn.setAttribute("aria-expanded", "false");
 }
+
+// --- Phone sidebar (hamburger menu) ---------------------------------------
+// On phones the toolbar + statusbar are relocated into an off-canvas drawer,
+// leaving only brand + search in the header. On tablet/desktop they stay put.
+
+const menuBtn = document.getElementById("menuBtn");
+const sidebar = document.getElementById("sidebar");
+const sidebarOverlay = document.getElementById("sidebarOverlay");
+const sidebarClose = document.getElementById("sidebarClose");
+const sidebarBody = document.getElementById("sidebarBody");
+const toolbarEl = document.querySelector(".toolbar");
+const statusbarEl = document.querySelector(".statusbar");
+const phoneMq = window.matchMedia("(max-width: 640px)");
+
+// Remember each relocatable node's original home so we can restore it.
+const chromeHomes = [toolbarEl, statusbarEl]
+	.filter(Boolean)
+	.map((node) => ({ node, parent: node.parentNode, next: node.nextSibling }));
+
+/** Move chrome into the drawer on phones, or back to its original spot otherwise. */
+function relocateChrome() {
+	if (phoneMq.matches) {
+		for (const { node } of chromeHomes) {
+			if (node.parentNode !== sidebarBody) sidebarBody.appendChild(node);
+		}
+	} else {
+		for (const { node, parent, next } of chromeHomes) {
+			if (node.parentNode !== parent) parent.insertBefore(node, next);
+		}
+		closeSidebar();
+	}
+}
+
+function openSidebar() {
+	closePanels({ except: "sidebar" });
+	sidebar.hidden = false;
+	sidebarOverlay.hidden = false;
+	// Next frame so the transition runs from the off-canvas state.
+	requestAnimationFrame(() => {
+		sidebar.classList.add("is-open");
+		sidebarOverlay.classList.add("is-open");
+	});
+	menuBtn.setAttribute("aria-expanded", "true");
+}
+
+let sidebarHideTimer = null;
+function closeSidebar() {
+	if (!sidebar || sidebar.hidden) return;
+	sidebar.classList.remove("is-open");
+	sidebarOverlay.classList.remove("is-open");
+	menuBtn.setAttribute("aria-expanded", "false");
+	// Hide once the slide-out finishes; fall back to a timer if the
+	// transition never fires (e.g. tab hidden, motion disabled).
+	let done = false;
+	const finish = () => {
+		if (done) return;
+		done = true;
+		clearTimeout(sidebarHideTimer);
+		sidebar.removeEventListener("transitionend", finish);
+		sidebar.hidden = true;
+		sidebarOverlay.hidden = true;
+	};
+	sidebar.addEventListener("transitionend", finish);
+	sidebarHideTimer = setTimeout(finish, 300);
+}
+
+menuBtn.addEventListener("click", () => {
+	sidebar.hidden ? openSidebar() : closeSidebar();
+});
+sidebarClose.addEventListener("click", () => closeSidebar());
+sidebarOverlay.addEventListener("click", () => closeSidebar());
+phoneMq.addEventListener("change", relocateChrome);
 
 // --- Problems-only filter -------------------------------------------------
 
@@ -916,7 +989,8 @@ function applyTheme() {
 	// Rebuild the placeholder each time: lucide.createIcons() swaps <i> for <svg>,
 	// so we re-insert a fresh <i> and let lucide render the new glyph.
 	const icon = prefs.theme === "light" ? "moon" : "sun";
-	themeBtn.innerHTML = `<i data-lucide="${icon}"></i>`;
+	// Keep the sidebar label alongside the icon when rebuilding the glyph.
+	themeBtn.innerHTML = `<i data-lucide="${icon}"></i><span class="tbar-btn__label">Toggle theme</span>`;
 	lucide.createIcons({ nodes: [themeBtn.querySelector("i[data-lucide]")] });
 	themeBtn.title = prefs.theme === "light" ? "Switch to dark theme" : "Switch to light theme";
 }
@@ -948,6 +1022,8 @@ function updateChrome(services) {
 		countEl.hidden = issues === 0;
 	}
 
+	updateStatusbar(services);
+
 	const color = { up: "#40c057", degraded: "#f0b429", down: "#fa5252" }[worstStatus(services)];
 	const canvas = document.createElement("canvas");
 	canvas.width = canvas.height = 32;
@@ -958,6 +1034,64 @@ function updateChrome(services) {
 	ctx.fill();
 	faviconEl.href = canvas.toDataURL("image/png");
 }
+
+// --- Statusbar: overall summary + live per-status counts ------------------
+
+const statusSummaryEl = document.getElementById("statusSummary");
+const statusSummaryDot = statusSummaryEl?.querySelector(".statusbar__dot");
+const statusSummaryText = document.getElementById("statusSummaryText");
+const legendCountEls = {
+	up: document.querySelector('[data-count="up"]'),
+	degraded: document.querySelector('[data-count="degraded"]'),
+	down: document.querySelector('[data-count="down"]'),
+	unknown: document.querySelector('[data-count="unknown"]'),
+};
+
+function updateStatusbar(services) {
+	const counts = { up: 0, degraded: 0, down: 0, unknown: 0 };
+	for (const s of services) {
+		counts[s.status] = (counts[s.status] ?? 0) + 1;
+	}
+
+	for (const [status, el] of Object.entries(legendCountEls)) {
+		if (!el) continue;
+		el.textContent = counts[status];
+		el.closest(".legend__item")?.classList.toggle("is-empty", counts[status] === 0);
+	}
+
+	// Overall pill mirrors the worst live status with a plain-language summary.
+	const worst = worstStatus(services);
+	if (statusSummaryDot) {
+		statusSummaryDot.className = `statusbar__dot is-${worst}`;
+	}
+	if (statusSummaryText) {
+		const issues = counts.down + counts.degraded;
+		if (services.length === 0) {
+			statusSummaryText.textContent = "No services selected";
+		} else if (issues === 0) {
+			statusSummaryText.textContent = "All systems operational";
+		} else {
+			const parts = [];
+			if (counts.down) parts.push(`${counts.down} down`);
+			if (counts.degraded) parts.push(`${counts.degraded} degraded`);
+			statusSummaryText.textContent = parts.join(" · ");
+		}
+	}
+
+	// When there are issues, the pill toggles the Problems-only filter; otherwise
+	// it's purely informational.
+	const hasIssues = counts.down + counts.degraded > 0;
+	statusSummaryEl.disabled = !hasIssues && !prefs.problemsOnly;
+	statusSummaryEl.classList.toggle("is-active", prefs.problemsOnly);
+}
+
+statusSummaryEl?.addEventListener("click", () => {
+	prefs.problemsOnly = !prefs.problemsOnly;
+	savePrefs();
+	syncProblemsBtn();
+	statusSummaryEl.classList.toggle("is-active", prefs.problemsOnly);
+	renderView();
+});
 
 // --- Browser notifications ------------------------------------------------
 
@@ -1188,6 +1322,7 @@ window.addEventListener("resize", () => {
 });
 
 lucide.createIcons();
+relocateChrome();
 applyTheme();
 syncProblemsBtn();
 syncNotifyToggle();
