@@ -55,7 +55,11 @@ Browser (public/) ─poll /api/status every 45s─▶ Worker reads D1 (Cache-API
   **Cache API** (~30s), so the fan-out runs at most once per TTL; before the first
   cron run populates D1 it falls back to a live fan-out so the page is never blank.
 - `GET /api/incidents` returns the recent incident log (also Cache-API fronted).
-- Both API routes are **rate-limited** per IP (60 req / 60s) via a Workers
+- `GET /api/summary` returns a single **overall-status rollup** (worst status
+  wins) plus a headline (`"All systems operational"` / `"2 down, 1 degraded"`)
+  and per-status counts — handy for compact embeds, badges, or a status banner.
+  Same D1-read/live-fallback and Cache-API fronting as `/api/status`.
+- All API routes are **rate-limited** per IP (60 req / 60s) via a Workers
   rate-limit binding.
 - The frontend ([public/app.js](public/app.js)) lays services out with a
   **squarified treemap**; tiles are sized by a per-service `weight` (layout only).
@@ -161,8 +165,8 @@ DuckDuckGo's icon CDN.
 
 - **Rate limiting** — `/api/*` is capped at 60 requests / 60s per IP via a
   Workers rate-limit binding (`API_RATE_LIMITER`); over-limit returns `429`.
-- **Caching** — `/api/status` and `/api/incidents` are wrapped in the Cache API,
-  so repeated requests are served without re-hitting D1 or upstreams.
+- **Caching** — `/api/status`, `/api/summary` and `/api/incidents` are wrapped in
+  the Cache API, so repeated requests are served without re-hitting D1 or upstreams.
 - **Headers / CSP** — [public/_headers](public/_headers) sets a strict
   `Content-Security-Policy` (no inline scripts), `X-Content-Type-Options`,
   `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy` on static
@@ -194,6 +198,7 @@ npm run dev:cron
 curl "http://localhost:8787/__scheduled"      # runs scheduled() once → persists a snapshot
 curl -s http://localhost:8787/api/status | jq # served from D1, includes per-service uptime
 curl -s http://localhost:8787/api/incidents | jq
+curl -s http://localhost:8787/api/summary | jq # overall status rollup + headline
 ```
 
 > **Local cron note:** under plain `wrangler dev`, the documented
@@ -239,7 +244,7 @@ public/            Static frontend (served directly by Cloudflare)
   analytics.js       GA4 loader, production-only
   _headers           Security headers / CSP for static assets
 src/
-  index.ts           Worker entry: scheduled() cron + rate-limited, cached /api/status & /api/incidents
+  index.ts           Worker entry: scheduled() cron + rate-limited, cached /api/status, /api/summary & /api/incidents
   services.ts        Curated service list + status data sources + shared types
   sources.ts         Per-source-type fetch + normalize (Statuspage/Slack/RSS/HTTP)
   db.ts              D1 persistence: snapshot upserts, incident transitions, uptime, retention

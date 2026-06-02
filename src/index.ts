@@ -12,7 +12,7 @@
  */
 
 import { persistSnapshot, pruneIncidents, readSnapshot, recentIncidents, type ApiService } from "./db";
-import { SERVICES, type ServiceStatus } from "./services";
+import { SERVICES, type ServiceStatus, type StatusLevel } from "./services";
 import { resolveStatus } from "./sources";
 
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -45,6 +45,71 @@ function liveSnapshot(statuses: ServiceStatus[]): { updatedAt: number; services:
 		updatedAt: Date.now(),
 		services: statuses.map((s) => ({ ...s, description: s.description ?? "", uptime: { day: 1, week: 1 } })),
 	};
+}
+
+interface Snapshot {
+	updatedAt: number | null;
+	services: ApiService[];
+}
+
+/**
+ * Load the current snapshot the way the public API exposes it: a fast D1 read,
+ * with any service added to SERVICES but not yet persisted surfaced as
+ * `unknown` (rather than invisible), falling back to a live fan-out before the
+ * first cron run populates D1. `fromDb` lets callers decide what's cacheable.
+ */
+async function loadSnapshot(env: Env): Promise<{ snapshot: Snapshot; fromDb: boolean }> {
+	const fromDb = await readSnapshot(env.DB);
+	if (fromDb) {
+		const dbIds = new Set(fromDb.services.map((s) => s.id));
+		for (const svc of SERVICES) {
+			if (!dbIds.has(svc.id)) {
+				fromDb.services.push({ id: svc.id, name: svc.name, category: svc.category, weight: svc.weight, status: "unknown", description: "Pending first check", uptime: { day: 1, week: 1 } });
+			}
+		}
+		return { snapshot: fromDb, fromDb: true };
+	}
+	return { snapshot: liveSnapshot(await resolveAll()), fromDb: false };
+}
+
+export interface StatusSummary {
+	/** Worst-case overall status across all services. */
+	status: StatusLevel;
+	/** Human-readable rollup, e.g. "All systems operational" or "2 down, 1 degraded". */
+	message: string;
+	/** Total number of tracked services. */
+	total: number;
+	/** Per-status service counts. */
+	counts: Record<StatusLevel, number>;
+	/** When the underlying snapshot was last updated (epoch ms), or null. */
+	updatedAt: number | null;
+}
+
+/** Roll a snapshot up into a single overall status + headline. */
+export function summarize(snapshot: Snapshot): StatusSummary {
+	const counts: Record<StatusLevel, number> = { up: 0, degraded: 0, down: 0, unknown: 0 };
+	for (const s of snapshot.services) counts[s.status]++;
+
+	// Worst status wins; `unknown` only surfaces when there's nothing better.
+	let status: StatusLevel;
+	if (counts.down > 0) status = "down";
+	else if (counts.degraded > 0) status = "degraded";
+	else if (counts.up > 0) status = "up";
+	else status = "unknown";
+
+	let message: string;
+	if (status === "up") {
+		message = "All systems operational";
+	} else if (status === "unknown") {
+		message = "Status unavailable";
+	} else {
+		const parts: string[] = [];
+		if (counts.down > 0) parts.push(`${counts.down} down`);
+		if (counts.degraded > 0) parts.push(`${counts.degraded} degraded`);
+		message = parts.join(", ");
+	}
+
+	return { status, message, total: snapshot.services.length, counts, updatedAt: snapshot.updatedAt };
 }
 
 export default {
@@ -88,23 +153,28 @@ export default {
 			const hit = await cache.match(cacheKey);
 			if (hit) return hit;
 
-			const fromDb = await readSnapshot(env.DB);
-			// Merge: any service added to SERVICES but not yet persisted by the cron
-			// appears immediately as "unknown" rather than being invisible.
-			if (fromDb) {
-				const dbIds = new Set(fromDb.services.map((s) => s.id));
-				for (const svc of SERVICES) {
-					if (!dbIds.has(svc.id)) {
-						fromDb.services.push({ id: svc.id, name: svc.name, category: svc.category, weight: svc.weight, status: "unknown", description: "Pending first check", uptime: { day: 1, week: 1 } });
-					}
-				}
-			}
-			const snapshot = fromDb ?? liveSnapshot(await resolveAll());
+			const { snapshot, fromDb } = await loadSnapshot(env);
 			const resp = json(snapshot);
 			// Cache D1-backed responses, but skip a degenerate cold-start fallback
 			// (everything `unknown`, e.g. a cold fan-out that timed out) so the next
 			// request retries instead of serving the bad snapshot for the full TTL.
-			const cacheable = fromDb !== null || snapshot.services.some((s) => s.status !== "unknown");
+			const cacheable = fromDb || snapshot.services.some((s) => s.status !== "unknown");
+			if (cacheable) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			return resp;
+		}
+
+		if (url.pathname === "/api/summary") {
+			// Overall-status rollup for compact embeds (favicon/title, badges,
+			// "All systems operational" banners). Same D1-read/live-fallback and
+			// per-colo caching as /api/status.
+			const cache = caches.default;
+			const cacheKey = new Request(new URL("/api/summary", url.origin).toString(), { method: "GET" });
+			const hit = await cache.match(cacheKey);
+			if (hit) return hit;
+
+			const { snapshot, fromDb } = await loadSnapshot(env);
+			const resp = json(summarize(snapshot));
+			const cacheable = fromDb || snapshot.services.some((s) => s.status !== "unknown");
 			if (cacheable) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;
 		}
