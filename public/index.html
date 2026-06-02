@@ -29,7 +29,13 @@
 		<meta name="twitter:image" content="https://isupmap.com/images/og-map.png" />
 		<meta name="twitter:image:alt" content="isUpMap live service status heatmap showing AWS, GitHub, OpenAI, Cloudflare and more" />
 
-		<link rel="icon" id="favicon" href="data:," />
+		<!-- Real icon by default; app.js swaps #favicon for a live status-color dot at runtime. -->
+		<link rel="icon" id="favicon" type="image/png" href="/images/logo/icon/favicon-32x32.png" />
+		<link rel="shortcut icon" href="/images/logo/icon/favicon.ico" />
+		<link rel="apple-touch-icon" sizes="180x180" href="/images/logo/icon/apple-icon-180x180.png" />
+		<link rel="manifest" href="/images/logo/icon/manifest.json" />
+		<meta name="msapplication-config" content="/images/logo/icon/browserconfig.xml" />
+		<meta name="msapplication-TileColor" content="#0f1117" />
 		<link rel="stylesheet" href="/styles.css" />
 		<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 		<script src="/analytics.js" type="module"></script>
@@ -102,7 +108,8 @@
 
 		<header class="header">
 			<div class="header__brand">
-				<h1 class="header__logo">isUpMap</h1>
+				<img src="/images/logo/isupmap.png" alt="" class="header__mark" width="28" height="28" />
+				<h1 class="header__logo"> isUpMap</h1>
 			</div>
 			<button id="searchBtn" class="header__search" type="button" aria-haspopup="dialog" title="Search (⌘K)">
 				<i data-lucide="search"></i>

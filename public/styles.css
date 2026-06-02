@@ -179,6 +179,14 @@ body {
 .header__brand {
 	display: flex;
 	align-items: center;
+	gap: 0.5rem;
+}
+
+.header__mark {
+	width: 28px;
+	height: 28px;
+	border-radius: 6px;
+	flex-shrink: 0;
 }
 
 .header__logo {
