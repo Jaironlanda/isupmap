@@ -117,6 +117,8 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Algolia | Developer & Cloud | RSS | `https://status.algolia.com/history.rss` |
 | GitLab | Developer & Cloud | RSS | `https://status.gitlab.com/pages/5b36dc6502d06804c08349f7/rss` |
 | Docker | Developer & Cloud | RSS | `https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss` |
+| Appwrite | Developer & Cloud | RSS | `https://status.appwrite.online/feed.rss` |
+| Firebase | Developer & Cloud | RSS (Atom) | `https://status.firebase.google.com/en/feed.atom` |
 | OpenAI | AI | RSS | `https://status.openai.com/feed.rss` |
 | Anthropic | AI | Statuspage | `https://status.claude.com` |
 | xAI | AI | RSS | `https://status.x.ai/feed.xml` |
@@ -132,6 +134,7 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Stability AI | AI | Statuspage | `https://status.stability.ai` |
 | Deepgram | AI | Statuspage | `https://status.deepgram.com` |
 | AssemblyAI | AI | Statuspage | `https://status.assemblyai.com` |
+| Cursor | AI | RSS | `https://status.cursor.com/history.rss` |
 | Stripe | Payments | Statuspage | `https://www.stripestatus.com` |
 | Coinbase | Payments | Statuspage | `https://status.coinbase.com` |
 | Shopify | Payments | Statuspage | `https://www.shopifystatus.com` |

@@ -96,6 +96,10 @@ export const SERVICES: Service[] = [
 	{ id: "gitlab", name: "GitLab", category: "Developer & Cloud", weight: 6, source: { type: "rss", url: "https://status.gitlab.com/pages/5b36dc6502d06804c08349f7/rss" } },
 	// Docker uses status.io (not Atlassian Statuspage) — RSS is the reliable path.
 	{ id: "docker", name: "Docker", category: "Developer & Cloud", weight: 6, source: { type: "rss", url: "https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss" } },
+	// Appwrite uses Instatus — RSS is the reliable path.
+	{ id: "appwrite", name: "Appwrite", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://status.appwrite.online/feed.rss" } },
+	// Firebase publishes an Atom incident feed.
+	{ id: "firebase", name: "Firebase", category: "Developer & Cloud", weight: 7, source: { type: "rss", url: "https://status.firebase.google.com/en/feed.atom", statusUrl: "https://status.firebase.google.com" } },
 
 	// --- AI ---
 	{ id: "openai", name: "OpenAI", category: "AI", weight: 8, source: { type: "rss", url: "https://status.openai.com/feed.rss", statusUrl: "https://status.openai.com" } },
@@ -118,6 +122,8 @@ export const SERVICES: Service[] = [
 	{ id: "stability", name: "Stability AI", category: "AI", weight: 5, source: { type: "statuspage", base: "https://status.stability.ai" } },
 	{ id: "deepgram", name: "Deepgram", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.deepgram.com" } },
 	{ id: "assemblyai", name: "AssemblyAI", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.assemblyai.com" } },
+	// Cursor publishes an RSS incident history feed.
+	{ id: "cursor", name: "Cursor", category: "AI", weight: 6, source: { type: "rss", url: "https://status.cursor.com/history.rss" } },
 
 	// --- Payments ---
 	{ id: "stripe", name: "Stripe", category: "Payments", weight: 7, source: { type: "statuspage", base: "https://www.stripestatus.com" } },

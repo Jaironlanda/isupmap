@@ -16,7 +16,15 @@ const UPSTREAM_CACHE_TTL = 30;
 /** RSS incidents older than this are treated as resolved/stale. */
 const RSS_FRESH_WINDOW_MS = 48 * 60 * 60 * 1000;
 
-const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
+const xmlParser = new XMLParser({
+	ignoreAttributes: false,
+	attributeNamePrefix: "@_",
+	// fast-xml-parser caps entity expansions (default 1000) as DoS protection.
+	// These are first-party status feeds, not untrusted input, and long incident
+	// histories (e.g. Cursor, AWS) routinely concatenate >1000 HTML entities into
+	// one document — which would otherwise throw and surface as "Unreachable".
+	processEntities: { enabled: true, maxTotalExpansions: 1_000_000, maxExpandedLength: 10_000_000 },
+});
 
 function result(service: Service, status: StatusLevel, description: string, details?: ServiceDetails): ServiceStatus {
 	return { id: service.id, name: service.name, category: service.category, weight: service.weight, status, description, details };
