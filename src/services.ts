@@ -5,7 +5,6 @@
  * resolved (see src/sources.ts):
  *   - `statuspage`: Atlassian Statuspage site. We read `{base}/api/v2/status.json`,
  *                   which exposes an authoritative current-status indicator.
- *   - `slack`:      Slack's bespoke status API (not Atlassian Statuspage).
  *   - `rss`:        An RSS/Atom incident feed. Status is inferred heuristically
  *                   from the most recent entry.
  *   - `http`:       A plain HTTP request to a URL; status derives from the
@@ -20,9 +19,8 @@ export type StatusLevel = "up" | "degraded" | "down" | "unknown";
 
 export type ServiceSource =
 	| { type: "statuspage"; base: string }
-	| { type: "slack" } // Slack's status page exposes a bespoke (non-Statuspage) JSON API.
-	| { type: "rss"; url: string }
-	| { type: "http"; url: string };
+	| { type: "rss"; url: string; statusUrl?: string } // statusUrl overrides the "Visit status page" link (defaults to feed URL origin)
+	| { type: "http"; url: string; statusUrl?: string }; // statusUrl overrides when the ping URL isn't the status page
 
 export interface Service {
 	id: string;
@@ -100,7 +98,7 @@ export const SERVICES: Service[] = [
 	{ id: "docker", name: "Docker", category: "Developer & Cloud", weight: 6, source: { type: "rss", url: "https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss" } },
 
 	// --- AI ---
-	{ id: "openai", name: "OpenAI", category: "AI", weight: 8, source: { type: "statuspage", base: "https://status.openai.com" } },
+	{ id: "openai", name: "OpenAI", category: "AI", weight: 8, source: { type: "rss", url: "https://status.openai.com/feed.rss", statusUrl: "https://status.openai.com" } },
 	{ id: "anthropic", name: "Anthropic", category: "AI", weight: 7, source: { type: "statuspage", base: "https://status.claude.com" } },
 	// status.x.ai's Statuspage JSON sits behind a Cloudflare bot challenge (403),
 	// but its RSS feed is open — so resolve xAI via the feed.
@@ -128,13 +126,14 @@ export const SERVICES: Service[] = [
 	{ id: "plaid", name: "Plaid", category: "Payments", weight: 4, source: { type: "statuspage", base: "https://status.plaid.com" } },
 	{ id: "paddle", name: "Paddle", category: "Payments", weight: 3, source: { type: "statuspage", base: "https://paddlestatus.com" } },
 	// Lemon Squeezy uses Oh Dear for status — RSS is the reliable path.
-	{ id: "lemonsqueezy", name: "Lemon Squeezy", category: "Payments", weight: 3, source: { type: "rss", url: "https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss" } },
+	// statusUrl needed: the feed lives at a sub-path of ohdear.app, so origin alone would link to the wrong page.
+	{ id: "lemonsqueezy", name: "Lemon Squeezy", category: "Payments", weight: 3, source: { type: "rss", url: "https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss", statusUrl: "https://ohdear.app/status-page/lemon-squeezy-status" } },
 	{ id: "square", name: "Square", category: "Payments", weight: 5, source: { type: "statuspage", base: "https://www.issquareup.com" } },
 	{ id: "klarna", name: "Klarna", category: "Payments", weight: 4, source: { type: "statuspage", base: "https://status.klarna.com" } },
 
 	// --- Communication ---
 	{ id: "discord", name: "Discord", category: "Communication", weight: 6, source: { type: "statuspage", base: "https://discordstatus.com" } },
-	{ id: "slack", name: "Slack", category: "Communication", weight: 7, source: { type: "slack" } },
+	{ id: "slack", name: "Slack", category: "Communication", weight: 7, source: { type: "rss", url: "https://slack-status.com/feed/rss", statusUrl: "https://slack-status.com" } },
 	{ id: "zoom", name: "Zoom", category: "Communication", weight: 6, source: { type: "statuspage", base: "https://www.zoomstatus.com" } },
 	{ id: "twilio", name: "Twilio", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.twilio.com" } },
 	{ id: "sendgrid", name: "SendGrid", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.sendgrid.com" } },
@@ -173,7 +172,8 @@ export const SERVICES: Service[] = [
 	{ id: "roblox", name: "Roblox", category: "Gaming & Entertainment", weight: 8, source: { type: "rss", url: "https://status.roblox.com/pages/59db90dbcdeb2f04dadcf16d/rss" } },
 	// The services below lack a public status JSON/RSS feed, so we fall back to reachability pings.
 	{ id: "steam", name: "Steam", category: "Gaming & Entertainment", weight: 8, source: { type: "http", url: "https://store.steampowered.com" } },
-	{ id: "playstation", name: "PlayStation Network", category: "Gaming & Entertainment", weight: 7, source: { type: "http", url: "https://www.playstation.com" } },
-	{ id: "riot", name: "Riot Games", category: "Gaming & Entertainment", weight: 6, source: { type: "http", url: "https://www.riotgames.com" } },
+	// PlayStation and Riot have dedicated status pages even though their feeds aren't machine-readable.
+	{ id: "playstation", name: "PlayStation Network", category: "Gaming & Entertainment", weight: 7, source: { type: "http", url: "https://www.playstation.com", statusUrl: "https://status.playstation.com" } },
+	{ id: "riot", name: "Riot Games", category: "Gaming & Entertainment", weight: 6, source: { type: "http", url: "https://www.riotgames.com", statusUrl: "https://status.riotgames.com" } },
 	{ id: "spotify", name: "Spotify", category: "Gaming & Entertainment", weight: 9, source: { type: "http", url: "https://open.spotify.com" } },
 ];

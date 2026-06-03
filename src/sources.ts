@@ -8,7 +8,7 @@
  */
 
 import { XMLParser } from "fast-xml-parser";
-import type { Service, ServiceDetails, ServiceStatus, StatusLevel } from "./services";
+import type { Service, ServiceDetails, ServiceSource, ServiceStatus, StatusLevel } from "./services";
 
 const UPSTREAM_TIMEOUT_MS = 8000;
 /** Edge-cache upstream responses for this long (seconds). */
@@ -107,38 +107,6 @@ async function fetchStatuspage(service: Service, base: string): Promise<ServiceS
 	return result(service, status, description || (status === "up" ? "All Systems Operational" : indicator), details);
 }
 
-interface SlackIncident {
-	title?: string;
-	type?: string;
-	url?: string;
-	date_updated?: string;
-	services?: string[];
-}
-
-/**
- * Slack publishes status via its own API (not Atlassian Statuspage):
- * `https://slack-status.com/api/v2.0.0/current`.
- */
-async function fetchSlack(service: Service): Promise<ServiceStatus> {
-	const res = await fetchUpstream("https://slack-status.com/api/v2.0.0/current");
-	if (!res.ok) return result(service, "unknown", `Status API returned HTTP ${res.status}`);
-
-	const data = (await res.json()) as { active_incidents?: SlackIncident[] };
-	const incidents = data.active_incidents ?? [];
-	if (incidents.length === 0) {
-		return result(service, "up", "All Systems Operational", { url: "https://slack-status.com" });
-	}
-
-	const hasOutage = incidents.some((i) => i.type === "outage");
-	const top = incidents[0];
-	const details: ServiceDetails = {
-		url: top?.url ?? "https://slack-status.com",
-		updatedAt: top?.date_updated,
-		incident: { name: top?.title ?? "Active incident", impact: top?.type, url: top?.url, updatedAt: top?.date_updated },
-		note: top?.services?.length ? `Affected: ${top.services.join(", ")}` : undefined,
-	};
-	return result(service, hasOutage ? "down" : "degraded", top?.title ?? "Active incident", details);
-}
 
 interface FeedEntry {
 	title: string;
@@ -183,22 +151,27 @@ const DOWN_RE = /\b(outage|down|unavailable|major|critical|service disruption|de
  * otherwise the service is treated as up.
  */
 async function fetchRss(service: Service, url: string): Promise<ServiceStatus> {
+	const rssSource = service.source as Extract<ServiceSource, { type: "rss" }>;
+	// Use the explicit statusUrl if provided; otherwise derive from the feed URL's origin.
+	// entry.link points to a specific incident post — not the right target for "Visit status page".
+	const statusPageUrl = rssSource.statusUrl ?? new URL(url).origin;
+
 	const res = await fetchUpstream(url);
 	if (!res.ok) return result(service, "unknown", `Feed returned HTTP ${res.status}`);
 
 	const entry = latestEntry(xmlParser.parse(await res.text()));
-	if (!entry || !entry.title) return result(service, "up", "No recent incidents reported", { url });
+	if (!entry || !entry.title) return result(service, "up", "No recent incidents reported", { url: statusPageUrl });
 
 	const fresh = entry.date == null || Date.now() - entry.date < RSS_FRESH_WINDOW_MS;
 	if (!fresh) {
 		return result(service, "up", "No recent incidents reported", {
-			url: entry.link ?? url,
+			url: statusPageUrl,
 			note: `Last feed entry ${new Date(entry.date as number).toISOString()}`,
 		});
 	}
 
 	const details: ServiceDetails = {
-		url: entry.link ?? url,
+		url: statusPageUrl,
 		updatedAt: entry.date != null ? new Date(entry.date).toISOString() : undefined,
 		incident: { name: entry.title, url: entry.link ?? undefined, updatedAt: entry.date != null ? new Date(entry.date).toISOString() : undefined },
 	};
@@ -211,10 +184,11 @@ async function fetchRss(service: Service, url: string): Promise<ServiceStatus> {
 
 /** Plain reachability check for services without a status feed. */
 async function fetchHttp(service: Service, url: string): Promise<ServiceStatus> {
+	const httpSource = service.source as Extract<ServiceSource, { type: "http" }>;
 	const start = Date.now();
 	const res = await fetchUpstream(url, { method: "GET", redirect: "follow" });
 	const ms = Date.now() - start;
-	const details: ServiceDetails = { url, note: `Responded in ${ms}ms (HTTP ${res.status})` };
+	const details: ServiceDetails = { url: httpSource.statusUrl ?? url, note: `Responded in ${ms}ms (HTTP ${res.status})` };
 	if (res.ok || (res.status >= 300 && res.status < 400)) {
 		return result(service, "up", `Reachable (HTTP ${res.status})`, details);
 	}
@@ -227,8 +201,6 @@ export async function resolveStatus(service: Service): Promise<ServiceStatus> {
 		switch (service.source.type) {
 			case "statuspage":
 				return await fetchStatuspage(service, service.source.base);
-			case "slack":
-				return await fetchSlack(service);
 			case "rss":
 				return await fetchRss(service, service.source.url);
 			case "http":

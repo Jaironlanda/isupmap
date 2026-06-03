@@ -36,8 +36,8 @@ and a mobile-friendly detail sheet.
 
 ```
 Cron (every 5m) ─▶ scheduled() ─▶ resolveStatus() × N      ┌─▶ Statuspage JSON   ({base}/api/v2/summary.json)
-                       │                                    ├─▶ Slack status API
-                       │   (src/sources.ts) ────────────────┼─▶ RSS / Atom feed   (fast-xml-parser)
+                       │                                    ├─▶ RSS / Atom feed   (fast-xml-parser)
+                       │   (src/sources.ts) ────────────────┘
                        │                                    └─▶ HTTP reachability ping
                        └─▶ persist to D1 (src/db.ts): upsert `current`,
                            open/close `incidents`; daily retention sweep
@@ -71,7 +71,6 @@ Every service is normalized to one of: `up` · `degraded` · `down` · `unknown`
 | Source type   | How status is derived |
 |---------------|-----------------------|
 | **Statuspage** | Reads `{base}/api/v2/summary.json` (Atlassian). `status.indicator` maps: `none`→`up`, `minor`/`maintenance`→`degraded`, `major`/`critical`→`down`. The summary also yields component rollups and active incidents for the detail view. |
-| **Slack**      | Reads Slack's bespoke API. No active incidents → `up`; an incident of type `outage` → `down`; otherwise → `degraded`. |
 | **RSS / Atom** | Parses the latest feed entry (via `fast-xml-parser`). Entries older than 48h are treated as resolved (`up`). A fresh entry mentioning *resolved/restored/operational* → `up`; *outage/down/major/critical* → `down`; anything else fresh → `degraded`. Heuristic. |
 | **HTTP ping**  | A plain `GET`. `2xx`/`3xx` → `up`; other response → `degraded`; network error or timeout → `down`. |
 | *(any)*        | A failed fetch or timeout → `unknown` (treated as "no data" — never opens an incident or counts as downtime). |
@@ -118,7 +117,7 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Algolia | Developer & Cloud | RSS | `https://status.algolia.com/history.rss` |
 | GitLab | Developer & Cloud | RSS | `https://status.gitlab.com/pages/5b36dc6502d06804c08349f7/rss` |
 | Docker | Developer & Cloud | RSS | `https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss` |
-| OpenAI | AI | Statuspage | `https://status.openai.com` |
+| OpenAI | AI | RSS | `https://status.openai.com/feed.rss` |
 | Anthropic | AI | Statuspage | `https://status.claude.com` |
 | xAI | AI | RSS | `https://status.x.ai/feed.xml` |
 | Groq | AI | Statuspage | `https://groqstatus.com` |
@@ -142,7 +141,7 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Square | Payments | Statuspage | `https://www.issquareup.com` |
 | Klarna | Payments | Statuspage | `https://status.klarna.com` |
 | Discord | Communication | Statuspage | `https://discordstatus.com` |
-| Slack | Communication | Slack API | `https://slack-status.com/api/v2.0.0/current` |
+| Slack | Communication | RSS | `https://slack-status.com/feed/rss` |
 | Zoom | Communication | Statuspage | `https://www.zoomstatus.com` |
 | Twilio | Communication | Statuspage | `https://status.twilio.com` |
 | SendGrid | Communication | Statuspage | `https://status.sendgrid.com` |
@@ -172,8 +171,8 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Netflix | Gaming & Entertainment | HTTP ping | `https://www.netflix.com` |
 | Roblox | Gaming & Entertainment | RSS | `https://status.roblox.com/pages/59db90dbcdeb2f04dadcf16d/rss` |
 | Steam | Gaming & Entertainment | HTTP ping | `https://store.steampowered.com` |
-| PlayStation Network | Gaming & Entertainment | HTTP ping | `https://www.playstation.com` |
-| Riot Games | Gaming & Entertainment | HTTP ping | `https://www.riotgames.com` |
+| PlayStation Network | Gaming & Entertainment | HTTP ping | `https://status.playstation.com` |
+| Riot Games | Gaming & Entertainment | HTTP ping | `https://status.riotgames.com` |
 | Spotify | Gaming & Entertainment | HTTP ping | `https://open.spotify.com` |
 
 To add a service, append an entry to [src/services.ts](src/services.ts) with its
@@ -271,7 +270,7 @@ public/            Static frontend (served directly by Cloudflare)
 src/
   index.ts           Worker entry: scheduled() cron + rate-limited, cached /api/status, /api/summary & /api/incidents
   services.ts        Curated service list + status data sources + shared types
-  sources.ts         Per-source-type fetch + normalize (Statuspage/Slack/RSS/HTTP)
+  sources.ts         Per-source-type fetch + normalize (Statuspage/RSS/HTTP)
   db.ts              D1 persistence: snapshot upserts, incident transitions, uptime, retention
 schema.sql           D1 schema (current / incidents / meta) + indexes
 wrangler.jsonc       Worker config (main, assets, cron, D1, rate limit)
