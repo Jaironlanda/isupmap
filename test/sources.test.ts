@@ -130,6 +130,34 @@ describe("rss", () => {
 		expect((await resolve()).status).toBe("degraded");
 	});
 
+	it("trusts a body that leads 'resolved' under an 'Incident:' title (Slack-style)", async () => {
+		// No Status: line; the fixed title contains "Incident", but the body's
+		// newest update says resolved — that must win.
+		const body = "This issue is now resolved for all users. We've resolved the issue some users saw.";
+		fetchSpy.mockResolvedValue(reply(rss("Incident: Trouble connecting or loading Slack", now(), body)));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.details?.incident).toBeUndefined();
+	});
+
+	it("treats a body leading 'Investigating' as degraded (status.io-style)", async () => {
+		const body = "June 1, 2026 11:24 UTC Investigating - Customers may experience failures creating branches.";
+		fetchSpy.mockResolvedValue(reply(rss("Issue with project operations", now(), body)));
+		expect((await resolve()).status).toBe("degraded");
+	});
+
+	it("treats a body leading 'Scheduled' as degraded (maintenance)", async () => {
+		const body = "May 21 01:20 PDT Scheduled - We will be performing routine database maintenance.";
+		fetchSpy.mockResolvedValue(reply(rss("Scheduled Database Maintenance", now(), body)));
+		expect((await resolve()).status).toBe("degraded");
+	});
+
+	it("is down when the body leads with an ongoing service disruption (AWS-style)", async () => {
+		const body = "We are providing an update on the ongoing service disruption affecting one region.";
+		fetchSpy.mockResolvedValue(reply(rss("Service disruption: Increased Error Rates", now(), body)));
+		expect((await resolve()).status).toBe("down");
+	});
+
 	it("is up when the latest entry is stale (outside the fresh window)", async () => {
 		fetchSpy.mockResolvedValue(reply(rss("Major outage", old())));
 		expect((await resolve()).status).toBe("up");

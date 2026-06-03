@@ -152,38 +152,70 @@ function latestEntry(doc: unknown): FeedEntry | null {
 	return best;
 }
 
-const RESOLVED_RE = /\b(resolved|restored|recovered|completed|operating normally|operational)\b/i;
+const RESOLVED_RE = /\b(resolved|restored|recovered|completed|operating normally|operational|back to normal)\b/i;
 const DOWN_RE = /\b(outage|down|unavailable|major|critical|service disruption|degradation|degraded)\b/i;
 /** Words that signal an ongoing-but-not-clearly-severe event (lower-severity than DOWN_RE). */
 const ACTIVE_RE = /\b(investigating|identified|elevated|degraded|degradation|disruption|incident|partial)\b/i;
+/** Scheduled-maintenance markers (Statuspage/status.io). */
+const MAINT_RE = /\b(scheduled|maintenance)\b/i;
+/** Recovering/recovered markers for the body scan — includes "monitoring" (mitigation applied). */
+const UP_RE = /\b(resolved|restored|recovered|completed|monitoring|operating normally|operational|back to normal)\b/i;
+
+/**
+ * Infer the current state from the entry **body**. These feeds concatenate
+ * updates newest-first, so the *earliest* lifecycle keyword in the body is the
+ * latest update and reflects the current state — e.g. a body that leads with
+ * "resolved" wins even when the (fixed) title still reads "Incident: ...".
+ * Returns null when the body carries no lifecycle keyword at all.
+ */
+function leadingSignal(description: string): StatusLevel | null {
+	if (!description) return null;
+	const at = (re: RegExp): number => {
+		const m = re.exec(description);
+		return m ? m.index : Infinity;
+	};
+	const up = at(UP_RE);
+	const maint = at(MAINT_RE);
+	const incident = Math.min(at(DOWN_RE), at(ACTIVE_RE));
+	const min = Math.min(up, maint, incident);
+	if (min === Infinity) return null;
+	if (min === up) return "up";
+	if (min === maint) return "degraded";
+	// An active incident leads: severity from any down-keyword in the body.
+	return DOWN_RE.test(description) ? "down" : "degraded";
+}
 
 /**
  * Classify a feed entry to a status level.
  *
  * The authoritative signal on modern status feeds (Statuspage / Instatus /
- * status.io) is the `Status:` line in the entry **body**, not the title — an
- * incident keeps one fixed title from "Investigating" through "Resolved" while
- * the body advances through the lifecycle. So we read the body's state first
- * and only fall back to title/body keyword heuristics when there's no such line.
+ * status.io) lives in the entry **body**, not the title — an incident keeps one
+ * fixed title from "Investigating" through "Resolved" while the body advances
+ * through the lifecycle. So we read the body's explicit `Status:` line first,
+ * then its leading lifecycle keyword, and only fall back to the title last.
  */
 function classifyEntry(title: string, description: string): StatusLevel {
 	const text = `${title} ${description}`;
 
-	// 1. Authoritative lifecycle state, e.g. "<b>Status: Monitoring</b>".
+	// 1. Explicit lifecycle line, e.g. "<b>Status: Monitoring</b>" / "Status: RESOLVED".
 	const state = /status:\s*([a-z]+)/i.exec(description)?.[1]?.toLowerCase();
 	if (state) {
 		if (state === "resolved" || state === "completed" || state === "monitoring") return "up";
 		if (state === "scheduled" || state === "maintenance") return "degraded";
 		if (state === "investigating" || state === "identified") return DOWN_RE.test(text) ? "down" : "degraded";
-		// "update" or an unrecognized state word: fall through to heuristics.
+		// "update" or an unrecognized state word: fall through.
 	}
 
-	// 2. Title/body keyword heuristics.
-	if (RESOLVED_RE.test(title)) return "up";
-	if (DOWN_RE.test(text)) return "down";
-	if (ACTIVE_RE.test(text)) return "degraded";
+	// 2. Newest-first body scan (catches a body "resolved" under an "Incident:" title).
+	const lead = leadingSignal(description);
+	if (lead) return lead;
 
-	// 3. Fresh but genuinely ambiguous: don't assert an incident color.
+	// 3. Title-only fallback (feeds whose body carries no lifecycle keyword).
+	if (RESOLVED_RE.test(title)) return "up";
+	if (DOWN_RE.test(title)) return "down";
+	if (ACTIVE_RE.test(title)) return "degraded";
+
+	// 4. Fresh but genuinely ambiguous: don't assert an incident color.
 	return "unknown";
 }
 
