@@ -110,8 +110,17 @@ async function fetchStatuspage(service: Service, base: string): Promise<ServiceS
 
 interface FeedEntry {
 	title: string;
+	/** Raw entry body (RSS `description` / Atom `summary`|`content`); may contain HTML. */
+	description: string;
 	date: number | null;
 	link: string | null;
+}
+
+/** Coerce a fast-xml-parser node (string, or `{ "#text": ... }` for CDATA/attrs) to a string. */
+function nodeText(raw: unknown): string {
+	if (raw == null) return "";
+	if (typeof raw === "object") return String((raw as Record<string, unknown>)["#text"] ?? "");
+	return String(raw);
 }
 
 /** Extract the most recent entry from a parsed RSS or Atom document. */
@@ -131,12 +140,13 @@ function latestEntry(doc: unknown): FeedEntry | null {
 		const rawDate = item.pubDate ?? item.updated ?? item.published ?? null;
 		const parsed = rawDate ? Date.parse(rawDate) : NaN;
 		const date = Number.isNaN(parsed) ? null : parsed;
-		const titleRaw = item.title;
-		const title = typeof titleRaw === "object" ? (titleRaw["#text"] ?? "") : (titleRaw ?? "");
+		const title = nodeText(item.title);
+		// RSS uses `description`; Atom uses `summary` or `content`.
+		const description = nodeText(item.description ?? item.summary ?? item.content);
 		// RSS link is a string; Atom link is an element with an href attribute.
 		const linkRaw = item.link;
 		const link = typeof linkRaw === "object" ? (linkRaw?.["@_href"] ?? null) : (linkRaw ?? null);
-		const entry: FeedEntry = { title: String(title).trim(), date, link: link ? String(link) : null };
+		const entry: FeedEntry = { title: title.trim(), description, date, link: link ? String(link) : null };
 		if (!best || (entry.date ?? 0) > (best.date ?? 0)) best = entry;
 	}
 	return best;
@@ -144,11 +154,43 @@ function latestEntry(doc: unknown): FeedEntry | null {
 
 const RESOLVED_RE = /\b(resolved|restored|recovered|completed|operating normally|operational)\b/i;
 const DOWN_RE = /\b(outage|down|unavailable|major|critical|service disruption|degradation|degraded)\b/i;
+/** Words that signal an ongoing-but-not-clearly-severe event (lower-severity than DOWN_RE). */
+const ACTIVE_RE = /\b(investigating|identified|elevated|degraded|degradation|disruption|incident|partial)\b/i;
 
 /**
- * RSS/Atom incident feeds: there's no authoritative "current" field, so infer.
- * A recent entry that reads like an unresolved problem => down/degraded,
- * otherwise the service is treated as up.
+ * Classify a feed entry to a status level.
+ *
+ * The authoritative signal on modern status feeds (Statuspage / Instatus /
+ * status.io) is the `Status:` line in the entry **body**, not the title — an
+ * incident keeps one fixed title from "Investigating" through "Resolved" while
+ * the body advances through the lifecycle. So we read the body's state first
+ * and only fall back to title/body keyword heuristics when there's no such line.
+ */
+function classifyEntry(title: string, description: string): StatusLevel {
+	const text = `${title} ${description}`;
+
+	// 1. Authoritative lifecycle state, e.g. "<b>Status: Monitoring</b>".
+	const state = /status:\s*([a-z]+)/i.exec(description)?.[1]?.toLowerCase();
+	if (state) {
+		if (state === "resolved" || state === "completed" || state === "monitoring") return "up";
+		if (state === "scheduled" || state === "maintenance") return "degraded";
+		if (state === "investigating" || state === "identified") return DOWN_RE.test(text) ? "down" : "degraded";
+		// "update" or an unrecognized state word: fall through to heuristics.
+	}
+
+	// 2. Title/body keyword heuristics.
+	if (RESOLVED_RE.test(title)) return "up";
+	if (DOWN_RE.test(text)) return "down";
+	if (ACTIVE_RE.test(text)) return "degraded";
+
+	// 3. Fresh but genuinely ambiguous: don't assert an incident color.
+	return "unknown";
+}
+
+/**
+ * RSS/Atom incident feeds: there's no top-level "current" field, so infer the
+ * state from the most recent entry (see {@link classifyEntry}). A stale or
+ * missing entry means the service is treated as up.
  */
 async function fetchRss(service: Service, url: string): Promise<ServiceStatus> {
 	const rssSource = service.source as Extract<ServiceSource, { type: "rss" }>;
@@ -170,17 +212,25 @@ async function fetchRss(service: Service, url: string): Promise<ServiceStatus> {
 		});
 	}
 
+	const updatedAt = entry.date != null ? new Date(entry.date).toISOString() : undefined;
 	const details: ServiceDetails = {
 		url: statusPageUrl,
-		updatedAt: entry.date != null ? new Date(entry.date).toISOString() : undefined,
-		incident: { name: entry.title, url: entry.link ?? undefined, updatedAt: entry.date != null ? new Date(entry.date).toISOString() : undefined },
+		updatedAt,
+		incident: { name: entry.title, url: entry.link ?? undefined, updatedAt },
 	};
 
-	if (RESOLVED_RE.test(entry.title)) return result(service, "up", entry.title, { ...details, incident: undefined });
-	if (DOWN_RE.test(entry.title)) return result(service, "down", entry.title, details);
-	// A fresh, ambiguous entry suggests an ongoing event worth surfacing.
-	return result(service, "degraded", entry.title, details);
+	const status = classifyEntry(entry.title, entry.description);
+	// A resolved/recovering incident isn't an active incident worth surfacing.
+	if (status === "up") return result(service, "up", entry.title, { ...details, incident: undefined });
+	return result(service, status, entry.title, details);
 }
+
+/**
+ * Codes that mean "the server answered, it just refused this probe" — bot walls
+ * and method/auth gates that big consumer sites serve to datacenter egress
+ * (where the cron runs). These prove reachability, so they aren't an outage.
+ */
+const BOT_WALL_CODES = new Set([401, 403, 405, 406, 429]);
 
 /** Plain reachability check for services without a status feed. */
 async function fetchHttp(service: Service, url: string): Promise<ServiceStatus> {
@@ -188,11 +238,15 @@ async function fetchHttp(service: Service, url: string): Promise<ServiceStatus> 
 	const start = Date.now();
 	const res = await fetchUpstream(url, { method: "GET", redirect: "follow" });
 	const ms = Date.now() - start;
-	const details: ServiceDetails = { url: httpSource.statusUrl ?? url, note: `Responded in ${ms}ms (HTTP ${res.status})` };
+	const baseDetails = { url: httpSource.statusUrl ?? url };
 	if (res.ok || (res.status >= 300 && res.status < 400)) {
-		return result(service, "up", `Reachable (HTTP ${res.status})`, details);
+		return result(service, "up", `Reachable (HTTP ${res.status})`, { ...baseDetails, note: `Responded in ${ms}ms (HTTP ${res.status})` });
 	}
-	return result(service, "degraded", `Unexpected response (HTTP ${res.status})`, details);
+	// A bot/auth wall means the host is alive; treat as reachable, not an outage.
+	if (BOT_WALL_CODES.has(res.status)) {
+		return result(service, "up", `Reachable (HTTP ${res.status})`, { ...baseDetails, note: `Probe blocked (HTTP ${res.status}) — host responded in ${ms}ms` });
+	}
+	return result(service, "degraded", `Unexpected response (HTTP ${res.status})`, { ...baseDetails, note: `Responded in ${ms}ms (HTTP ${res.status})` });
 }
 
 /** Resolve a single service's status, mapping any failure to `unknown`. */

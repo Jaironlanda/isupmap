@@ -4,7 +4,7 @@
  * Static assets (the frontend in /public) are served automatically by the
  * Cloudflare runtime; this Worker handles the API and the cron.
  *
- *   - `scheduled` (cron, every 1m): resolve every service and persist a
+ *   - `scheduled` (cron, every 5m): resolve every service and persist a
  *     snapshot + incident transitions to D1.
  *   - `GET /api/status`: fast read of the persisted snapshot (with uptime).
  *     Falls back to a live fan-out before the first cron run populates D1.

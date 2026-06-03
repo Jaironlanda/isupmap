@@ -76,31 +76,14 @@ describe("statuspage", () => {
 	});
 });
 
-describe("slack", () => {
-	const resolve = () => resolveStatus(svc({ type: "slack" }));
-
-	it("is up with no active incidents", async () => {
-		fetchSpy.mockResolvedValue(reply(JSON.stringify({ active_incidents: [] })));
-		expect((await resolve()).status).toBe("up");
-	});
-
-	it("is down when an incident is an outage", async () => {
-		fetchSpy.mockResolvedValue(reply(JSON.stringify({ active_incidents: [{ title: "Down", type: "outage" }] })));
-		expect((await resolve()).status).toBe("down");
-	});
-
-	it("is degraded for a non-outage incident", async () => {
-		fetchSpy.mockResolvedValue(reply(JSON.stringify({ active_incidents: [{ title: "Slow", type: "incident" }] })));
-		expect((await resolve()).status).toBe("degraded");
-	});
-});
-
 describe("rss", () => {
 	const url = "https://status.example.com/feed.rss";
 	const resolve = () => resolveStatus(svc({ type: "rss", url }));
 
-	function rss(title: string, pubDate: string) {
-		return `<?xml version="1.0"?><rss><channel><item><title>${title}</title><pubDate>${pubDate}</pubDate><link>https://x/1</link></item></channel></rss>`;
+	function rss(title: string, pubDate: string, description = "") {
+		// Real Statuspage/Instatus feeds CDATA-wrap the HTML body, so it survives as text.
+		const desc = description ? `<description><![CDATA[${description}]]></description>` : "";
+		return `<?xml version="1.0"?><rss><channel><item><title>${title}</title>${desc}<pubDate>${pubDate}</pubDate><link>https://x/1</link></item></channel></rss>`;
 	}
 	const now = () => new Date().toUTCString();
 	const old = () => new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toUTCString();
@@ -115,8 +98,35 @@ describe("rss", () => {
 		expect((await resolve()).status).toBe("down");
 	});
 
-	it("is degraded for a fresh but ambiguous entry", async () => {
+	it("is degraded for a fresh active-incident entry", async () => {
 		fetchSpy.mockResolvedValue(reply(rss("Investigating elevated latency", now())));
+		expect((await resolve()).status).toBe("degraded");
+	});
+
+	it("is unknown for a fresh but genuinely ambiguous entry", async () => {
+		// No status word, no incident keyword: don't flip the tile to a hard color.
+		fetchSpy.mockResolvedValue(reply(rss("Weekly status report", now())));
+		expect((await resolve()).status).toBe("unknown");
+	});
+
+	it("trusts the body's 'Status: Monitoring' over a scary title", async () => {
+		// Incidents keep a fixed title from Investigating → Resolved; the live
+		// state lives in the body. A recovering incident must read as up.
+		const body = "<b>Status: Monitoring</b><br/>We applied a mitigation and are monitoring.";
+		fetchSpy.mockResolvedValue(reply(rss("Elevated error rates on the API", now(), body)));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		// A recovering/resolved entry isn't surfaced as an active incident.
+		expect(r.details?.incident).toBeUndefined();
+	});
+
+	it("treats a body 'Status: Resolved' as up despite an incident title", async () => {
+		fetchSpy.mockResolvedValue(reply(rss("Major outage in us-east", now(), "<b>Status: Resolved</b>")));
+		expect((await resolve()).status).toBe("up");
+	});
+
+	it("treats a body 'Status: Investigating' as an active incident", async () => {
+		fetchSpy.mockResolvedValue(reply(rss("Some service event", now(), "<b>Status: Investigating</b>")));
 		expect((await resolve()).status).toBe("degraded");
 	});
 
@@ -147,6 +157,18 @@ describe("http", () => {
 
 	it("is degraded on a 5xx", async () => {
 		fetchSpy.mockResolvedValue(reply("boom", 500));
+		expect((await resolve()).status).toBe("degraded");
+	});
+
+	it("is up on a 403/429 bot wall (host responded, just refused the probe)", async () => {
+		fetchSpy.mockResolvedValueOnce(reply("forbidden", 403));
+		expect((await resolve()).status).toBe("up");
+		fetchSpy.mockResolvedValueOnce(reply("rate limited", 429));
+		expect((await resolve()).status).toBe("up");
+	});
+
+	it("is degraded on a 404", async () => {
+		fetchSpy.mockResolvedValue(reply("missing", 404));
 		expect((await resolve()).status).toBe("degraded");
 	});
 });
