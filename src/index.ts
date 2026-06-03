@@ -112,6 +112,18 @@ export function summarize(snapshot: Snapshot): StatusSummary {
 	return { status, message, total: snapshot.services.length, counts, updatedAt: snapshot.updatedAt };
 }
 
+/**
+ * Per-IP rate limit for the expensive (cache-miss) API path. Shared NAT IPs may
+ * share a bucket; 60/min is generous for the dashboard's ~1 poll / 45s. Returns
+ * a 429 Response when the limit is exceeded, or null to proceed.
+ */
+async function rateLimit(request: Request, env: Env): Promise<Response | null> {
+	const ip = request.headers.get("cf-connecting-ip") ?? "anon";
+	const { success } = await env.API_RATE_LIMITER.limit({ key: ip });
+	if (success) return null;
+	return json({ error: "Rate limit exceeded" }, { status: 429, headers: { "retry-after": "60", "cache-control": "no-store" } });
+}
+
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
@@ -135,16 +147,6 @@ export default {
 			return new Response(source.replace(/"G-XXXXXXXXXX"/, JSON.stringify(gaId)), { headers });
 		}
 
-		if (url.pathname.startsWith("/api/")) {
-			// Per-IP rate limit. Shared NAT IPs may share a bucket; 60/min is
-			// generous enough for the dashboard's ~1 poll / 45s that this is fine.
-			const ip = request.headers.get("cf-connecting-ip") ?? "anon";
-			const { success } = await env.API_RATE_LIMITER.limit({ key: ip });
-			if (!success) {
-				return json({ error: "Rate limit exceeded" }, { status: 429, headers: { "retry-after": "60", "cache-control": "no-store" } });
-			}
-		}
-
 		if (url.pathname === "/api/status") {
 			// Cache per-colo so the (potentially expensive) snapshot — especially
 			// the cold-start live fan-out — is computed at most once per TTL.
@@ -152,6 +154,12 @@ export default {
 			const cacheKey = new Request(new URL("/api/status", url.origin).toString(), { method: "GET" });
 			const hit = await cache.match(cacheKey);
 			if (hit) return hit;
+
+			// Only the expensive miss path (D1 read + cold-start live fan-out) is
+			// rate-limited; cache hits above are served cheaply to everyone, so a
+			// flood of repeats collapses onto the cached response instead of 429s.
+			const limited = await rateLimit(request, env);
+			if (limited) return limited;
 
 			const { snapshot, fromDb } = await loadSnapshot(env);
 			const resp = json(snapshot);
@@ -172,6 +180,9 @@ export default {
 			const hit = await cache.match(cacheKey);
 			if (hit) return hit;
 
+			const limited = await rateLimit(request, env);
+			if (limited) return limited;
+
 			const { snapshot, fromDb } = await loadSnapshot(env);
 			const resp = json(summarize(snapshot));
 			const cacheable = fromDb || snapshot.services.some((s) => s.status !== "unknown");
@@ -187,6 +198,9 @@ export default {
 			const cacheKey = new Request(new URL(`/api/incidents?limit=${limit}`, url.origin).toString(), { method: "GET" });
 			const hit = await cache.match(cacheKey);
 			if (hit) return hit;
+
+			const limited = await rateLimit(request, env);
+			if (limited) return limited;
 
 			const resp = json({ incidents: await recentIncidents(env.DB, limit) });
 			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
