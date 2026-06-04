@@ -105,6 +105,8 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Linode | Developer & Cloud | Statuspage | `https://status.linode.com` |
 | Render | Developer & Cloud | Statuspage | `https://status.render.com` |
 | AWS | Developer & Cloud | RSS | `https://status.aws.amazon.com/rss/all.rss` |
+| Google Cloud | Developer & Cloud | RSS | `https://status.cloud.google.com/en/feed.atom` |
+| Microsoft Azure | Developer & Cloud | RSS | `https://azure.status.microsoft/en-us/status/feed/` |
 | Supabase | Developer & Cloud | Statuspage | `https://status.supabase.com` |
 | Fly.io | Developer & Cloud | Statuspage | `https://status.flyio.net` |
 | Railway | Developer & Cloud | RSS | `https://railway.betteruptime.com/feed.rss` |
