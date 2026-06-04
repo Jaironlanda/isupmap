@@ -35,7 +35,7 @@ curl -s http://localhost:8787/api/status | jq
 ## Adding a service
 
 1. Append an entry to [`src/services.ts`](src/services.ts) with `id`, `name`, `category`, `weight`, and `source`.
-2. The logo is fetched automatically from DuckDuckGo's icon CDN using the service's domain — no extra step needed.
+2. If the service should show a logo, add its brand domain to the `LOGO_DOMAIN` map in [`public/app.js`](public/app.js) and drop a square PNG at `public/images/logo/services/<id>.png` (logos are self-hosted, not fetched from a CDN).
 3. Run the cron locally to verify the status resolves correctly.
 
 Source types:
@@ -52,10 +52,14 @@ Source types:
 
 Keep PRs focused. One service or one fix per PR is ideal.
 
-## Type checking
+## Type checking & tests
 
 ```sh
-npm run typecheck
+npm run typecheck   # tsc --noEmit
+npm test            # Vitest suite (runs inside workerd)
 ```
 
-No test suite is configured yet. Manual verification via `wrangler dev` is the current approach.
+Tests use Vitest with the Cloudflare Workers pool, so they execute against real
+local bindings. CI runs `npm run typecheck` and `npm test` on every PR (see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml)), and both must pass
+before a PR can merge into `main`. Use `npm run test:watch` while developing.
