@@ -72,6 +72,10 @@ export const SERVICES: Service[] = [
 	{ id: "render", name: "Render", category: "Developer & Cloud", weight: 3, source: { type: "statuspage", base: "https://status.render.com" } },
 	// AWS publishes an RSS feed rather than a Statuspage site — exercises the RSS path.
 	{ id: "aws", name: "AWS", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://status.aws.amazon.com/rss/all.rss" } },
+	// Google Cloud publishes an Atom incident feed (not an Atlassian Statuspage).
+	{ id: "gcp", name: "Google Cloud", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://status.cloud.google.com/en/feed.atom", statusUrl: "https://status.cloud.google.com/" } },
+	// Azure publishes an RSS incident feed (not an Atlassian Statuspage).
+	{ id: "azure", name: "Microsoft Azure", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://azure.status.microsoft/en-us/status/feed/", statusUrl: "https://azure.status.microsoft/en-us/status" } },
 	{ id: "supabase", name: "Supabase", category: "Developer & Cloud", weight: 6, source: { type: "statuspage", base: "https://status.supabase.com" } },
 	{ id: "flyio", name: "Fly.io", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://status.flyio.net" } },
 	// Railway uses Betterstack (not Atlassian Statuspage) — RSS is the reliable path.
