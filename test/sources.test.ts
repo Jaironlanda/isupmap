@@ -218,6 +218,45 @@ describe("rss", () => {
 	});
 });
 
+describe("cloud providers (GCP & Azure RSS feeds)", () => {
+	const now = () => new Date().toUTCString();
+	const nowIso = () => new Date().toISOString();
+
+	// Google Cloud publishes an Atom feed (feed > entry[]).
+	function gcpAtom(title: string, summary: string, updated = nowIso()) {
+		return `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Google Cloud Service Health Updates</title><entry><title>${title}</title><link href="https://status.cloud.google.com/incidents/abc" rel="alternate"/><id>tag:abc</id><updated>${updated}</updated><summary type="html"><![CDATA[${summary}]]></summary></entry></feed>`;
+	}
+	const resolveGcp = () => resolveStatus(svc({ type: "rss", url: "https://status.cloud.google.com/en/feed.atom", statusUrl: "https://status.cloud.google.com/" }));
+
+	it("GCP: a resolved incident reads as up", async () => {
+		fetchSpy.mockResolvedValue(reply(gcpAtom("RESOLVED: Vertex AI elevated errors", "<p><b>Resolved</b> - The issue with Vertex AI has been mitigated and the service is operating normally.</p>")));
+		const r = await resolveGcp();
+		expect(r.status).toBe("up");
+		expect(r.details?.url).toBe("https://status.cloud.google.com/");
+	});
+
+	it("GCP: a fresh active outage reads as down", async () => {
+		fetchSpy.mockResolvedValue(reply(gcpAtom("Compute Engine experiencing a major outage", "<p>We are investigating a major outage affecting Compute Engine.</p>")));
+		expect((await resolveGcp()).status).toBe("down");
+	});
+
+	// Azure publishes an RSS 2.0 feed (rss > channel > item[]); it is often empty (no active incidents).
+	const resolveAzure = () => resolveStatus(svc({ type: "rss", url: "https://azure.status.microsoft/en-us/status/feed/", statusUrl: "https://azure.status.microsoft/en-us/status" }));
+
+	it("Azure: an empty feed reads as up", async () => {
+		fetchSpy.mockResolvedValue(reply(`<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>Azure Status</title></channel></rss>`));
+		const r = await resolveAzure();
+		expect(r.status).toBe("up");
+		expect(r.details?.url).toBe("https://azure.status.microsoft/en-us/status");
+	});
+
+	it("Azure: a fresh outage item reads as down", async () => {
+		const item = `<item><title>Service issue - Virtual Machines</title><description><![CDATA[Investigating - We are aware of a major outage affecting Virtual Machines.]]></description><pubDate>${now()}</pubDate><link>https://azure.status.microsoft/incident/1</link></item>`;
+		fetchSpy.mockResolvedValue(reply(`<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>Azure Status</title>${item}</channel></rss>`));
+		expect((await resolveAzure()).status).toBe("down");
+	});
+});
+
 describe("http", () => {
 	const url = "https://example.com/health";
 	const resolve = () => resolveStatus(svc({ type: "http", url }));
