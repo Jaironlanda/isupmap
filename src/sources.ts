@@ -186,6 +186,38 @@ const MAINT_RE = /\b(scheduled|maintenance)\b/i;
 const UP_RE = /\b(resolved|restored|recovered|completed|monitoring|operating normally|operational|back to normal)\b/i;
 
 /**
+ * Formal incident-update stage markers, as emitted by Statuspage / status.io /
+ * Instatus: each update reads `Timestamp <Stage> - text` (e.g. "Investigating -",
+ * "Monitoring -", "Resolved -"). The capture is the stage word; the trailing
+ * dash distinguishes a real stage label from the same word used in prose
+ * ("we are monitoring the situation"). The stage is usually wrapped in markup
+ * (`<b>Resolved</b> - …`), so we strip tags before matching.
+ */
+const STAGE_RE = /\b(investigating|identified|monitoring|resolved|completed|scheduled)\b\s*[-–—]/gi;
+
+/**
+ * Infer state from the formal stage markers in the body. Providers disagree on
+ * ordering — Slack lists updates newest-first, status.io (e.g. Roblox) lists them
+ * oldest-first — so position is unreliable. But an incident only advances
+ * (Investigating → Identified → Monitoring → Resolved), so the *furthest* stage
+ * present is the current one regardless of order: a body that reached "Resolved -"
+ * is up even if it opens with "Investigating -". Returns null when the body has
+ * no formal stage markers (prose bodies fall through to {@link leadingSignal}).
+ */
+function stageSignal(description: string, text: string): StatusLevel | null {
+	const plain = description.replace(/<[^>]+>/g, " ");
+	const stages = new Set<string>();
+	for (const m of plain.matchAll(STAGE_RE)) stages.add(m[1].toLowerCase());
+	if (stages.size === 0) return null;
+	// Recovering or done (incidents don't regress) → up.
+	if (stages.has("resolved") || stages.has("completed") || stages.has("monitoring")) return "up";
+	// Still active: severity from any down-keyword in the entry.
+	if (stages.has("investigating") || stages.has("identified")) return DOWN_RE.test(text) ? "down" : "degraded";
+	if (stages.has("scheduled")) return "degraded";
+	return null;
+}
+
+/**
  * Infer the current state from the entry **body**. These feeds concatenate
  * updates newest-first, so the *earliest* lifecycle keyword in the body is the
  * latest update and reflects the current state — e.g. a body that leads with
@@ -230,16 +262,22 @@ function classifyEntry(title: string, description: string): StatusLevel {
 		// "update" or an unrecognized state word: fall through.
 	}
 
-	// 2. Newest-first body scan (catches a body "resolved" under an "Incident:" title).
+	// 2. Formal stage markers ("Investigating -" … "Resolved -"): the furthest
+	//    stage reached wins, so a resolved status.io incident reads as up even when
+	//    its body lists updates oldest-first (e.g. Roblox).
+	const stage = stageSignal(description, text);
+	if (stage) return stage;
+
+	// 3. Prose body with no stage markers: newest-first leading keyword (Slack-style).
 	const lead = leadingSignal(description);
 	if (lead) return lead;
 
-	// 3. Title-only fallback (feeds whose body carries no lifecycle keyword).
+	// 4. Title-only fallback (feeds whose body carries no lifecycle keyword).
 	if (RESOLVED_RE.test(title)) return "up";
 	if (DOWN_RE.test(title)) return "down";
 	if (ACTIVE_RE.test(title)) return "degraded";
 
-	// 4. Fresh but genuinely ambiguous: don't assert an incident color.
+	// 5. Fresh but genuinely ambiguous: don't assert an incident color.
 	return "unknown";
 }
 
