@@ -52,6 +52,28 @@ describe("statuspage", () => {
 		expect((await resolve()).status).toBe("down");
 	});
 
+	// Build N components, the first `major` of them in major_outage, the rest operational.
+	function components(total: number, major: number) {
+		return Array.from({ length: total }, (_, i) => ({ name: `c${i}`, status: i < major ? "major_outage" : "operational" }));
+	}
+
+	it("tempers a region-localized major outage to degraded", async () => {
+		// indicator=major but only 1 of 20 components down (a single region) → not a full outage.
+		fetchSpy.mockResolvedValue(reply(summaryBody("major", components(20, 1))));
+		expect((await resolve()).status).toBe("degraded");
+	});
+
+	it("keeps a broad major outage as down", async () => {
+		// A majority of components in major_outage → genuinely down.
+		fetchSpy.mockResolvedValue(reply(summaryBody("major", components(10, 6))));
+		expect((await resolve()).status).toBe("down");
+	});
+
+	it("trusts a major indicator when components are too few to judge breadth", async () => {
+		fetchSpy.mockResolvedValue(reply(summaryBody("major", components(2, 1))));
+		expect((await resolve()).status).toBe("down");
+	});
+
 	it("maps an unrecognized indicator to unknown", async () => {
 		fetchSpy.mockResolvedValue(reply(summaryBody("wat")));
 		expect((await resolve()).status).toBe("unknown");

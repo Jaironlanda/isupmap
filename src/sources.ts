@@ -68,6 +68,36 @@ interface StatuspageSummary {
 }
 
 /**
+ * A Statuspage indicator reflects *peak* component severity, not *breadth*: a
+ * single region in `major_outage` among hundreds of operational components still
+ * sets `indicator: "major"`. Mapping that straight to `down` paints a service
+ * fully red when ~98% of it is fine (observed on Elastic/Grafana during a
+ * single-region cloud outage). So for a major/critical indicator we consult the
+ * component rollup and only call it `down` when the major outage is *broad*;
+ * a localized one is tempered to `degraded`.
+ */
+const STATUSPAGE_MIN_COMPONENTS = 4;
+const STATUSPAGE_BROAD_MAJOR_FRACTION = 0.5;
+
+function statuspageStatus(indicator: string, total: number, majorOutages: number): StatusLevel {
+	switch (indicator) {
+		case "none":
+			return "up";
+		case "minor":
+		case "maintenance":
+			return "degraded";
+		case "major":
+		case "critical":
+			// Too few components to judge breadth (or none reported): trust the indicator.
+			if (total < STATUSPAGE_MIN_COMPONENTS) return "down";
+			// Broad major outage → down; a small, localized blast radius → degraded.
+			return majorOutages / total >= STATUSPAGE_BROAD_MAJOR_FRACTION ? "down" : "degraded";
+		default:
+			return "unknown";
+	}
+}
+
+/**
  * Atlassian Statuspage. We read `summary.json` (a superset of `status.json`)
  * so the hover card can show component rollups and active incidents.
  */
@@ -79,28 +109,14 @@ async function fetchStatuspage(service: Service, base: string): Promise<ServiceS
 	const indicator = data.status?.indicator ?? "none";
 	const description = data.status?.description ?? "";
 
-	let status: StatusLevel;
-	switch (indicator) {
-		case "none":
-			status = "up";
-			break;
-		case "minor":
-		case "maintenance":
-			status = "degraded";
-			break;
-		case "major":
-		case "critical":
-			status = "down";
-			break;
-		default:
-			status = "unknown";
-	}
-
 	// Component rollup (skip group containers, which roll up their children).
 	const components = (data.components ?? []).filter((c) => c.group !== true);
 	const total = components.length;
 	const impacted = components.filter((c) => c.status && c.status !== "operational").map((c) => c.name ?? "Unknown");
 	const operational = total - impacted.length;
+	const majorOutages = components.filter((c) => c.status === "major_outage").length;
+
+	const status = statuspageStatus(indicator, total, majorOutages);
 
 	const incident = data.incidents?.[0];
 	const details: ServiceDetails = {
