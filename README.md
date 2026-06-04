@@ -75,7 +75,7 @@ Every service is normalized to one of: `up` · `degraded` · `down` · `unknown`
 
 | Source type   | How status is derived |
 |---------------|-----------------------|
-| **Statuspage** | Reads `{base}/api/v2/summary.json` (Atlassian). `status.indicator` maps: `none`→`up`, `minor`/`maintenance`→`degraded`, `major`/`critical`→`down`. The summary also yields component rollups and active incidents for the detail view. |
+| **Statuspage** | Reads `{base}/api/v2/summary.json` (Atlassian). `status.indicator` maps: `none`→`up`, `minor`/`maintenance`→`degraded`. A `major`/`critical` indicator is **tempered by breadth** — since the indicator reflects peak component severity, not how much is affected — so it only reads `down` when the major outage is broad (≥50% of components, or too few components to judge); a localized one (e.g. a single region) → `degraded`. The summary also yields component rollups and active incidents for the detail view. |
 | **RSS / Atom** | Parses the latest feed entry (via `fast-xml-parser`). Entries older than 48h are treated as resolved (`up`). A fresh entry mentioning *resolved/restored/operational* → `up`; *outage/down/major/critical* → `down`; anything else fresh → `degraded`. Heuristic. |
 | **HTTP ping**  | A plain `GET`. `2xx`/`3xx` → `up`; other response → `degraded`; network error or timeout → `down`. |
 | *(any)*        | A failed fetch or timeout → `unknown` (treated as "no data" — never opens an incident or counts as downtime). |
@@ -105,6 +105,8 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Linode | Developer & Cloud | Statuspage | `https://status.linode.com` |
 | Render | Developer & Cloud | Statuspage | `https://status.render.com` |
 | AWS | Developer & Cloud | RSS | `https://status.aws.amazon.com/rss/all.rss` |
+| Google Cloud | Developer & Cloud | RSS | `https://status.cloud.google.com/en/feed.atom` |
+| Microsoft Azure | Developer & Cloud | RSS | `https://azure.status.microsoft/en-us/status/feed/` |
 | Supabase | Developer & Cloud | Statuspage | `https://status.supabase.com` |
 | Fly.io | Developer & Cloud | Statuspage | `https://status.flyio.net` |
 | Railway | Developer & Cloud | RSS | `https://railway.betteruptime.com/feed.rss` |

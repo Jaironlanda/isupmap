@@ -52,6 +52,28 @@ describe("statuspage", () => {
 		expect((await resolve()).status).toBe("down");
 	});
 
+	// Build N components, the first `major` of them in major_outage, the rest operational.
+	function components(total: number, major: number) {
+		return Array.from({ length: total }, (_, i) => ({ name: `c${i}`, status: i < major ? "major_outage" : "operational" }));
+	}
+
+	it("tempers a region-localized major outage to degraded", async () => {
+		// indicator=major but only 1 of 20 components down (a single region) → not a full outage.
+		fetchSpy.mockResolvedValue(reply(summaryBody("major", components(20, 1))));
+		expect((await resolve()).status).toBe("degraded");
+	});
+
+	it("keeps a broad major outage as down", async () => {
+		// A majority of components in major_outage → genuinely down.
+		fetchSpy.mockResolvedValue(reply(summaryBody("major", components(10, 6))));
+		expect((await resolve()).status).toBe("down");
+	});
+
+	it("trusts a major indicator when components are too few to judge breadth", async () => {
+		fetchSpy.mockResolvedValue(reply(summaryBody("major", components(2, 1))));
+		expect((await resolve()).status).toBe("down");
+	});
+
 	it("maps an unrecognized indicator to unknown", async () => {
 		fetchSpy.mockResolvedValue(reply(summaryBody("wat")));
 		expect((await resolve()).status).toBe("unknown");
@@ -140,6 +162,33 @@ describe("rss", () => {
 		expect(r.details?.incident).toBeUndefined();
 	});
 
+	it("reads a resolved status.io incident as up despite an oldest-first body (Roblox)", async () => {
+		// status.io lists updates oldest-first: Investigating → Monitoring → Resolved.
+		// The furthest stage (Resolved) is the current state, even though the body opens
+		// with "Investigating -".
+		// Mirrors the real feed: each stage is wrapped in markup (<b>Stage</b> - …).
+		const body =
+			"<small>June 2, 2026 16:40 PDT</small><br /><b>Investigating</b> - We are investigating an issue with the Roblox player failing to launch.<br /><br />" +
+			"<small>June 2, 2026 16:54 PDT</small><br /><b>Monitoring</b> - We have reverted the change and are seeing recovery.<br /><br />" +
+			"<small>June 2, 2026 17:29 PDT</small><br /><b>Resolved</b> - This incident is resolved.";
+		fetchSpy.mockResolvedValue(reply(rss("Issue opening Roblox on certain platforms", now(), body)));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.details?.incident).toBeUndefined();
+	});
+
+	it("reads an incident that reached 'Monitoring -' as up regardless of a leading 'Investigating -'", async () => {
+		const body = "Investigating - elevated errors observed. Monitoring - mitigation applied, watching recovery.";
+		fetchSpy.mockResolvedValue(reply(rss("Some service event", now(), body)));
+		expect((await resolve()).status).toBe("up");
+	});
+
+	it("keeps a still-active 'Investigating -' incident as down when the body names an outage", async () => {
+		const body = "May 6 17:43 PDT Investigating - We are aware of a major outage affecting connectivity.";
+		fetchSpy.mockResolvedValue(reply(rss("Players may be unable to connect", now(), body)));
+		expect((await resolve()).status).toBe("down");
+	});
+
 	it("treats a body leading 'Investigating' as degraded (status.io-style)", async () => {
 		const body = "June 1, 2026 11:24 UTC Investigating - Customers may experience failures creating branches.";
 		fetchSpy.mockResolvedValue(reply(rss("Issue with project operations", now(), body)));
@@ -166,6 +215,45 @@ describe("rss", () => {
 	it("is up when the feed has no items", async () => {
 		fetchSpy.mockResolvedValue(reply(`<?xml version="1.0"?><rss><channel></channel></rss>`));
 		expect((await resolve()).status).toBe("up");
+	});
+});
+
+describe("cloud providers (GCP & Azure RSS feeds)", () => {
+	const now = () => new Date().toUTCString();
+	const nowIso = () => new Date().toISOString();
+
+	// Google Cloud publishes an Atom feed (feed > entry[]).
+	function gcpAtom(title: string, summary: string, updated = nowIso()) {
+		return `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Google Cloud Service Health Updates</title><entry><title>${title}</title><link href="https://status.cloud.google.com/incidents/abc" rel="alternate"/><id>tag:abc</id><updated>${updated}</updated><summary type="html"><![CDATA[${summary}]]></summary></entry></feed>`;
+	}
+	const resolveGcp = () => resolveStatus(svc({ type: "rss", url: "https://status.cloud.google.com/en/feed.atom", statusUrl: "https://status.cloud.google.com/" }));
+
+	it("GCP: a resolved incident reads as up", async () => {
+		fetchSpy.mockResolvedValue(reply(gcpAtom("RESOLVED: Vertex AI elevated errors", "<p><b>Resolved</b> - The issue with Vertex AI has been mitigated and the service is operating normally.</p>")));
+		const r = await resolveGcp();
+		expect(r.status).toBe("up");
+		expect(r.details?.url).toBe("https://status.cloud.google.com/");
+	});
+
+	it("GCP: a fresh active outage reads as down", async () => {
+		fetchSpy.mockResolvedValue(reply(gcpAtom("Compute Engine experiencing a major outage", "<p>We are investigating a major outage affecting Compute Engine.</p>")));
+		expect((await resolveGcp()).status).toBe("down");
+	});
+
+	// Azure publishes an RSS 2.0 feed (rss > channel > item[]); it is often empty (no active incidents).
+	const resolveAzure = () => resolveStatus(svc({ type: "rss", url: "https://azure.status.microsoft/en-us/status/feed/", statusUrl: "https://azure.status.microsoft/en-us/status" }));
+
+	it("Azure: an empty feed reads as up", async () => {
+		fetchSpy.mockResolvedValue(reply(`<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>Azure Status</title></channel></rss>`));
+		const r = await resolveAzure();
+		expect(r.status).toBe("up");
+		expect(r.details?.url).toBe("https://azure.status.microsoft/en-us/status");
+	});
+
+	it("Azure: a fresh outage item reads as down", async () => {
+		const item = `<item><title>Service issue - Virtual Machines</title><description><![CDATA[Investigating - We are aware of a major outage affecting Virtual Machines.]]></description><pubDate>${now()}</pubDate><link>https://azure.status.microsoft/incident/1</link></item>`;
+		fetchSpy.mockResolvedValue(reply(`<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>Azure Status</title>${item}</channel></rss>`));
+		expect((await resolveAzure()).status).toBe("down");
 	});
 });
 
