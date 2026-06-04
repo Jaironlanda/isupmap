@@ -61,6 +61,11 @@ Browser (public/) ─poll /api/status every 45s─▶ Worker reads D1 (Cache-API
   Same D1-read/live-fallback and Cache-API fronting as `/api/status`.
 - All API routes are **rate-limited** per IP (60 req / 60s) via a Workers
   rate-limit binding.
+- **Crawlable pages** — the dashboard is a client-rendered SPA, so for SEO the
+  Worker also server-renders (no-JS) `GET /status/<id>` (per-service status +
+  uptime) and `GET /status` (a directory), plus a generated `/sitemap.xml` and a
+  static `robots.txt`. These give crawlers real content for queries like
+  "is GitHub down?". See [src/pages.ts](src/pages.ts).
 - The frontend ([public/app.js](public/app.js)) lays services out with a
   **squarified treemap**; tiles are sized by a per-service `weight` (layout only).
 
@@ -179,9 +184,10 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Spotify | Gaming & Entertainment | HTTP ping | `https://open.spotify.com` |
 
 To add a service, append an entry to [src/services.ts](src/services.ts) with its
-`category`, a `weight` (tile size), and a `source`. Brand logos are mapped by
-service id in `LOGO_DOMAIN` ([public/app.js](public/app.js)) and fetched from
-DuckDuckGo's icon CDN.
+`category`, a `weight` (tile size), and a `source`. Brand logos are
+**self-hosted**: add the service id to `LOGO_DOMAIN` ([public/app.js](public/app.js))
+and drop a matching `<id>.png` (a ~128px favicon) in
+[public/images/logo/services/](public/images/logo/services/).
 
 > **Tips:** Statuspage hosts often `302`-redirect to a canonical domain
 > (e.g. `status.zoom.us` → `www.zoomstatus.com`) — use the canonical host to
@@ -197,7 +203,8 @@ DuckDuckGo's icon CDN.
 - **Headers / CSP** — [public/_headers](public/_headers) sets a strict
   `Content-Security-Policy` (no inline scripts), `X-Content-Type-Options`,
   `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy` on static
-  assets; the Worker adds `nosniff` + `Referrer-Policy` to API responses.
+  assets; the Worker adds `nosniff` + `Referrer-Policy` to API responses and a
+  scripts-disabled (`script-src 'none'`) CSP to its server-rendered pages.
 
 ## Analytics
 
@@ -269,12 +276,15 @@ public/            Static frontend (served directly by Cloudflare)
   styles.css         Treemap palette, hover card, panels, command palette, bottom sheet, themes
   app.js             Poll loop, treemap, logos, detail sheet, palette, customization, toasts
   analytics.js       GA4 loader, production-only
+  robots.txt         Crawl rules + sitemap pointer
   _headers           Security headers / CSP for static assets
+  images/            OG image + self-hosted service icons (logo/services/<id>.png)
 src/
-  index.ts           Worker entry: scheduled() cron + rate-limited, cached /api/status, /api/summary & /api/incidents
+  index.ts           Worker entry: scheduled() cron + rate-limited/cached /api/* + SSR /status pages & /sitemap.xml
   services.ts        Curated service list + status data sources + shared types
   sources.ts         Per-source-type fetch + normalize (Statuspage/RSS/HTTP)
   db.ts              D1 persistence: snapshot upserts, incident transitions, uptime, retention
+  pages.ts           Server-rendered status pages (/status, /status/<id>) + sitemap.xml
 schema.sql           D1 schema (current / incidents / meta) + indexes
 wrangler.jsonc       Worker config (main, assets, cron, D1, rate limit)
 ```
