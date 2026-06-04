@@ -20,7 +20,7 @@
     "fast-xml-parser": "^4.5.0"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.16.11",
+    "@cloudflare/vitest-pool-workers": "^0.16.12",
     "typescript": "^5.7.0",
     "vitest": "^4.1.8",
     "wrangler": "^4.95.0"
