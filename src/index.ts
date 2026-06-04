@@ -12,6 +12,7 @@
  */
 
 import { persistSnapshot, pruneIncidents, readSnapshot, recentIncidents, type ApiService } from "./db";
+import { findService, renderNotFound, renderServicePage, renderSitemap, renderStatusIndex } from "./pages";
 import { SERVICES, type ServiceStatus, type StatusLevel } from "./services";
 import { resolveStatus } from "./sources";
 
@@ -24,6 +25,26 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 			// Defense-in-depth (the _headers file doesn't apply to Worker responses).
 			"x-content-type-options": "nosniff",
 			"referrer-policy": "no-referrer",
+			...(init.headers ?? {}),
+		},
+	});
+}
+
+/**
+ * Worker-rendered markup (SSR status pages, sitemap). These responses bypass the
+ * static-asset `_headers` file, so set security headers here. The pages ship no
+ * scripts (`script-src 'none'`) and only inline CSS (`style-src 'unsafe-inline'`).
+ */
+function markup(body: string, contentType: string, init: ResponseInit = {}): Response {
+	return new Response(body, {
+		...init,
+		headers: {
+			"content-type": contentType,
+			"cache-control": "public, max-age=60",
+			"x-content-type-options": "nosniff",
+			"referrer-policy": "no-referrer",
+			"content-security-policy":
+				"default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; frame-ancestors 'none'",
 			...(init.headers ?? {}),
 		},
 	});
@@ -203,6 +224,37 @@ export default {
 			if (limited) return limited;
 
 			const resp = json({ incidents: await recentIncidents(env.DB, limit) });
+			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			return resp;
+		}
+
+		// Crawlable sitemap, generated from SERVICES so it never drifts.
+		if (url.pathname === "/sitemap.xml") {
+			return markup(renderSitemap(), "application/xml; charset=utf-8", { headers: { "cache-control": "public, max-age=3600" } });
+		}
+
+		// Server-rendered status directory (good for crawl discovery + internal links).
+		if (url.pathname === "/status" || url.pathname === "/status/") {
+			return markup(renderStatusIndex(), "text/html; charset=utf-8", { headers: { "cache-control": "public, max-age=3600" } });
+		}
+
+		// Per-service SSR page: /status/<id>. Indexable content for "is X down?".
+		const serviceMatch = url.pathname.match(/^\/status\/([a-z0-9-]+)\/?$/);
+		if (serviceMatch) {
+			const service = findService(serviceMatch[1]);
+			if (!service) return markup(renderNotFound(), "text/html; charset=utf-8", { status: 404 });
+
+			const cache = caches.default;
+			const cacheKey = new Request(new URL(`/status/${service.id}`, url.origin).toString(), { method: "GET" });
+			const hit = await cache.match(cacheKey);
+			if (hit) return hit;
+
+			const limited = await rateLimit(request, env);
+			if (limited) return limited;
+
+			const { snapshot } = await loadSnapshot(env);
+			const current = snapshot.services.find((s) => s.id === service.id) ?? null;
+			const resp = markup(renderServicePage(service, current, snapshot.updatedAt), "text/html; charset=utf-8");
 			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;
 		}

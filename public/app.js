@@ -12,7 +12,8 @@ const STATUS_LABEL = {
 	unknown: "Unknown",
 };
 
-// Brand domain per service id, used to fetch a favicon/logo.
+// Brand domain per service id. Logos are self-hosted (see logoUrl); this map
+// doubles as the "has a logo" gate and a record of each service's domain.
 const LOGO_DOMAIN = {
 	github: "github.com", cloudflare: "cloudflare.com", npm: "npmjs.com", digitalocean: "digitalocean.com",
 	vercel: "vercel.com", netlify: "netlify.com", mongodb: "mongodb.com", sentry: "sentry.io",
@@ -43,10 +44,9 @@ const LOGO_DOMAIN = {
 	steam: "steampowered.com", playstation: "playstation.com", riot: "riotgames.com", spotify: "spotify.com",
 };
 
-/** Logo URL for a service id, or null if unknown. Served by DuckDuckGo's icon CDN. */
+/** Logo URL for a service id, or null if unknown. Self-hosted under /images. */
 function logoUrl(id) {
-	const domain = LOGO_DOMAIN[id];
-	return domain ? `https://icons.duckduckgo.com/ip3/${domain}.ico` : null;
+	return LOGO_DOMAIN[id] ? `/images/logo/services/${id}.png` : null;
 }
 
 const gridEl = document.getElementById("grid");

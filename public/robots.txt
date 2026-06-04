@@ -1,0 +1,8 @@
+# isUpMap — https://isupmap.com
+User-agent: *
+Allow: /
+
+# Crawlers don't need the JSON API
+Disallow: /api/
+
+Sitemap: https://isupmap.com/sitemap.xml
