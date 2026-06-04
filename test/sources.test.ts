@@ -140,6 +140,33 @@ describe("rss", () => {
 		expect(r.details?.incident).toBeUndefined();
 	});
 
+	it("reads a resolved status.io incident as up despite an oldest-first body (Roblox)", async () => {
+		// status.io lists updates oldest-first: Investigating → Monitoring → Resolved.
+		// The furthest stage (Resolved) is the current state, even though the body opens
+		// with "Investigating -".
+		// Mirrors the real feed: each stage is wrapped in markup (<b>Stage</b> - …).
+		const body =
+			"<small>June 2, 2026 16:40 PDT</small><br /><b>Investigating</b> - We are investigating an issue with the Roblox player failing to launch.<br /><br />" +
+			"<small>June 2, 2026 16:54 PDT</small><br /><b>Monitoring</b> - We have reverted the change and are seeing recovery.<br /><br />" +
+			"<small>June 2, 2026 17:29 PDT</small><br /><b>Resolved</b> - This incident is resolved.";
+		fetchSpy.mockResolvedValue(reply(rss("Issue opening Roblox on certain platforms", now(), body)));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.details?.incident).toBeUndefined();
+	});
+
+	it("reads an incident that reached 'Monitoring -' as up regardless of a leading 'Investigating -'", async () => {
+		const body = "Investigating - elevated errors observed. Monitoring - mitigation applied, watching recovery.";
+		fetchSpy.mockResolvedValue(reply(rss("Some service event", now(), body)));
+		expect((await resolve()).status).toBe("up");
+	});
+
+	it("keeps a still-active 'Investigating -' incident as down when the body names an outage", async () => {
+		const body = "May 6 17:43 PDT Investigating - We are aware of a major outage affecting connectivity.";
+		fetchSpy.mockResolvedValue(reply(rss("Players may be unable to connect", now(), body)));
+		expect((await resolve()).status).toBe("down");
+	});
+
 	it("treats a body leading 'Investigating' as degraded (status.io-style)", async () => {
 		const body = "June 1, 2026 11:24 UTC Investigating - Customers may experience failures creating branches.";
 		fetchSpy.mockResolvedValue(reply(rss("Issue with project operations", now(), body)));
