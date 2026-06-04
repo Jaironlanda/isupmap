@@ -10,7 +10,7 @@
 import { XMLParser } from "fast-xml-parser";
 import type { Service, ServiceDetails, ServiceSource, ServiceStatus, StatusLevel } from "./services";
 
-const UPSTREAM_TIMEOUT_MS = 8000;
+const UPSTREAM_TIMEOUT_MS = 15000;
 /** Edge-cache upstream responses for this long (seconds). */
 const UPSTREAM_CACHE_TTL = 30;
 /** RSS incidents older than this are treated as resolved/stale. */
