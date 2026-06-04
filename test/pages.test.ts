@@ -1,0 +1,62 @@
+import { describe, expect, it } from "vitest";
+import type { ApiService } from "../src/db";
+import { findService, renderServicePage, renderSitemap, renderStatusIndex } from "../src/pages";
+import { SERVICES, type Service, type StatusLevel } from "../src/services";
+
+function apiService(id: string, status: StatusLevel, over: Partial<ApiService> = {}): ApiService {
+	return { id, name: id.toUpperCase(), category: "Test", weight: 1, status, description: "", uptime: { day: 1, week: 1 }, ...over };
+}
+const svc: Service = SERVICES[0];
+
+describe("renderServicePage", () => {
+	it("renders an indexable, JS-free page with canonical + status copy", () => {
+		const html = renderServicePage(svc, apiService(svc.id, "down", { description: "Major outage" }), 1_700_000_000_000);
+		expect(html).toContain(`<link rel="canonical" href="https://isupmap.com/status/${svc.id}" />`);
+		expect(html).toContain(`Is ${svc.name} down?`);
+		expect(html).toContain("Major outage"); // incident note surfaced
+		expect(html).toContain("Down"); // status label
+		expect(html).not.toContain("<script src"); // no client JS
+	});
+
+	it("shows uptime stats only when status is known", () => {
+		const up = renderServicePage(svc, apiService(svc.id, "up", { uptime: { day: 0.9876, week: 0.9999 } }), 1000);
+		expect(up).toContain("98.76%");
+		expect(up).toContain("24-hour uptime");
+
+		const unknown = renderServicePage(svc, null, 1000);
+		expect(unknown).not.toContain("24-hour uptime");
+		expect(unknown).toContain("Unknown");
+	});
+
+	it("escapes untrusted snapshot text", () => {
+		const html = renderServicePage(svc, apiService(svc.id, "degraded", { description: "<img src=x onerror=alert(1)>" }), 1000);
+		expect(html).not.toContain("<img src=x");
+		expect(html).toContain("&lt;img src=x");
+	});
+});
+
+describe("findService", () => {
+	it("resolves a known id and rejects an unknown one", () => {
+		expect(findService(svc.id)?.name).toBe(svc.name);
+		expect(findService("definitely-not-a-service")).toBeUndefined();
+	});
+});
+
+describe("renderStatusIndex", () => {
+	it("links every tracked service", () => {
+		const html = renderStatusIndex();
+		for (const s of SERVICES) expect(html).toContain(`/status/${s.id}`);
+	});
+});
+
+describe("renderSitemap", () => {
+	it("includes the homepage, directory, and one URL per service", () => {
+		const xml = renderSitemap();
+		expect(xml).toContain("<loc>https://isupmap.com/</loc>");
+		expect(xml).toContain("<loc>https://isupmap.com/status</loc>");
+		for (const s of SERVICES) expect(xml).toContain(`<loc>https://isupmap.com/status/${s.id}</loc>`);
+		// Well-formed: one <url> per entry (home + directory + every service).
+		const urlCount = (xml.match(/<url>/g) ?? []).length;
+		expect(urlCount).toBe(SERVICES.length + 2);
+	});
+});
