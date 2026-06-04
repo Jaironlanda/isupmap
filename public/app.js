@@ -18,6 +18,7 @@ const LOGO_DOMAIN = {
 	github: "github.com", cloudflare: "cloudflare.com", npm: "npmjs.com", digitalocean: "digitalocean.com",
 	vercel: "vercel.com", netlify: "netlify.com", mongodb: "mongodb.com", sentry: "sentry.io",
 	circleci: "circleci.com", linode: "linode.com", render: "render.com", aws: "aws.amazon.com",
+	gcp: "cloud.google.com", azure: "azure.microsoft.com",
 	supabase: "supabase.com", flyio: "fly.io", railway: "railway.app", neon: "neon.tech",
 	planetscale: "planetscale.com", bunny: "bunny.net", auth0: "auth0.com", clerk: "clerk.com",
 	hashicorp: "hashicorp.com", snowflake: "snowflake.com", elastic: "elastic.co", newrelic: "newrelic.com",
