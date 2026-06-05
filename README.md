@@ -187,8 +187,8 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Netflix | Gaming & Entertainment | HTTP ping | `https://www.netflix.com` |
 | Roblox | Gaming & Entertainment | RSS | `https://status.roblox.com/pages/59db90dbcdeb2f04dadcf16d/rss` |
 | Steam | Gaming & Entertainment | HTTP ping | `https://store.steampowered.com` |
-| PlayStation Network | Gaming & Entertainment | HTTP ping | `https://www.playstation.com` |
-| Riot Games | Gaming & Entertainment | HTTP ping | `https://www.riotgames.com` |
+| PlayStation Network | Gaming & Entertainment | HTTP ping | `https://status.playstation.com` |
+| Riot Games | Gaming & Entertainment | HTTP ping | `https://status.riotgames.com` |
 | Spotify | Gaming & Entertainment | HTTP ping | `https://open.spotify.com` |
 
 ### Disabled services
