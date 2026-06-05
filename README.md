@@ -119,7 +119,7 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Neon | Developer & Cloud | RSS | `https://neonstatus.com/pages/6878fc85709daa75be6c7e3c/rss` |
 | PlanetScale | Developer & Cloud | Statuspage | `https://www.planetscalestatus.com` |
 | Bunny.net | Developer & Cloud | Statuspage | `https://status.bunny.net` |
-| Auth0 | Developer & Cloud | Statuspage | `https://auth0.statuspage.io` |
+| Auth0 | Developer & Cloud | Statuspage · **⊘ disabled** | `https://auth0.statuspage.io` |
 | Clerk | Developer & Cloud | Statuspage | `https://status.clerk.com` |
 | HashiCorp | Developer & Cloud | Statuspage | `https://status.hashicorp.com` |
 | Snowflake | Developer & Cloud | Statuspage | `https://status.snowflake.com` |
@@ -193,8 +193,9 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 
 ### Disabled services
 
-A service is **disabled** when its upstream stops publishing a status feed we can
-parse. Rather than show a stale or misleading state, a disabled service is set to
+A service is **disabled** when its upstream no longer provides a status feed we can
+trust — it stopped publishing a machine-readable feed, or the feed reports stale /
+incorrect state. Rather than show a stale or misleading status, a disabled service is set to
 `unknown` (grey), kept out of the heatmap, and listed — locked and labelled
 `disabled`, with the reason on hover — in the **Customize** panel. The resolver
 skips disabled services entirely (no fetch). To disable one, add a `disabled:
@@ -206,6 +207,7 @@ Currently disabled (upstream no longer exposes a machine-readable feed, verified
 | Service | Reason |
 |---------|--------|
 | Microsoft Azure | Global status feed publishes no machine-readable incident items (empty channel). |
+| Auth0 | Statuspage JSON (`auth0.statuspage.io`) is stale — reports a phantom "minor outage" with no active incident while the live page shows all operational. |
 | Railway | Migrated to a JS-rendered status page (`status.railway.com`); the old Betterstack feed is empty. |
 | PagerDuty | `history.rss` now returns an HTML page instead of XML. |
 | Algolia | `history.rss` now returns an HTML page instead of XML. |

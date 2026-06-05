@@ -96,8 +96,10 @@ export const SERVICES: Service[] = [
 	{ id: "planetscale", name: "PlanetScale", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://www.planetscalestatus.com" } },
 	// Bunny.net CDN
 	{ id: "bunny", name: "Bunny.net", category: "Developer & Cloud", weight: 3, source: { type: "statuspage", base: "https://status.bunny.net" } },
-	// Auth0's Statuspage lives at auth0.statuspage.io (status.auth0.com lacks the JSON API).
-	{ id: "auth0", name: "Auth0", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://auth0.statuspage.io" } },
+	// Auth0's Statuspage JSON (auth0.statuspage.io — status.auth0.com lacks the JSON API)
+	// is stale: it reports a phantom "Minor Service Outage" with no active incident while
+	// the live status page shows all systems operational, so it can't be trusted.
+	{ id: "auth0", name: "Auth0", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://auth0.statuspage.io" }, disabled: "Auth0's status feed is stale — it reports a phantom 'minor outage' with no active incident while the live status page shows all systems operational." },
 	{ id: "clerk", name: "Clerk", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.clerk.com" } },
 	{ id: "hashicorp", name: "HashiCorp", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.hashicorp.com" } },
 	{ id: "snowflake", name: "Snowflake", category: "Developer & Cloud", weight: 6, source: { type: "statuspage", base: "https://status.snowflake.com" } },
