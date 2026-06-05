@@ -133,25 +133,30 @@ function uptimeFraction(intervals: IncidentIntervalRow[], windowMs: number, now:
  * yet (so callers can fall back to a live fetch).
  */
 export async function readSnapshot(db: D1Database, now = Date.now()): Promise<{ updatedAt: number | null; services: ApiService[] } | null> {
-	const currentRows = await db.prepare("SELECT * FROM current").all<CurrentRow>();
-	if (currentRows.results.length === 0) return null;
-
+	// One round-trip for all three reads (current snapshot, recent incidents,
+	// last-run marker) instead of three sequential awaits. The empty-snapshot
+	// early-return below only fires at cold start (before the first cron), so
+	// running all three eagerly costs nothing in practice.
 	const since = now - WEEK_MS;
-	const incidentRows = await db
-		.prepare("SELECT service_id, status, started_at, ended_at FROM incidents WHERE ended_at IS NULL OR ended_at >= ?")
-		.bind(since)
-		.all<IncidentIntervalRow>();
+	const [currentRes, incidentRes, lastRunRes] = await db.batch([
+		db.prepare("SELECT * FROM current"),
+		db.prepare("SELECT service_id, status, started_at, ended_at FROM incidents WHERE ended_at IS NULL OR ended_at >= ?").bind(since),
+		db.prepare("SELECT value FROM meta WHERE key = 'last_run'"),
+	]);
+
+	const currentRows = currentRes.results as CurrentRow[];
+	if (currentRows.length === 0) return null;
 
 	const byService = new Map<string, IncidentIntervalRow[]>();
-	for (const iv of incidentRows.results) {
+	for (const iv of incidentRes.results as IncidentIntervalRow[]) {
 		const list = byService.get(iv.service_id) ?? [];
 		list.push(iv);
 		byService.set(iv.service_id, list);
 	}
 
-	const lastRun = await db.prepare("SELECT value FROM meta WHERE key = 'last_run'").first<{ value: string }>();
+	const lastRun = (lastRunRes.results as { value: string }[])[0];
 
-	const services: ApiService[] = currentRows.results.map((r) => {
+	const services: ApiService[] = currentRows.map((r) => {
 		const intervals = byService.get(r.service_id) ?? [];
 		return {
 			id: r.service_id,
