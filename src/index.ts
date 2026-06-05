@@ -75,6 +75,24 @@ interface Snapshot {
 	services: ApiService[];
 }
 
+/** Reasons keyed by service id for services disabled due to an unreliable source. */
+const DISABLED_REASONS = new Map(SERVICES.filter((s) => s.disabled).map((s) => [s.id, s.disabled as string]));
+
+/**
+ * `disabled` is static config (not persisted), so stamp it onto the snapshot on
+ * read and force those services to `unknown` regardless of any stale stored row.
+ */
+function decorateDisabled(services: ApiService[]): void {
+	for (const s of services) {
+		const reason = DISABLED_REASONS.get(s.id);
+		if (reason) {
+			s.disabled = reason;
+			s.status = "unknown";
+			s.description = reason;
+		}
+	}
+}
+
 /**
  * Load the current snapshot the way the public API exposes it: a fast D1 read,
  * with any service added to SERVICES but not yet persisted surfaced as
@@ -90,9 +108,12 @@ async function loadSnapshot(env: Env): Promise<{ snapshot: Snapshot; fromDb: boo
 				fromDb.services.push({ id: svc.id, name: svc.name, category: svc.category, weight: svc.weight, status: "unknown", description: "Pending first check", uptime: { day: 1, week: 1 } });
 			}
 		}
+		decorateDisabled(fromDb.services);
 		return { snapshot: fromDb, fromDb: true };
 	}
-	return { snapshot: liveSnapshot(await resolveAll()), fromDb: false };
+	const live = liveSnapshot(await resolveAll());
+	decorateDisabled(live.services);
+	return { snapshot: live, fromDb: false };
 }
 
 export interface StatusSummary {

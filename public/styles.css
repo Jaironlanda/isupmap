@@ -736,6 +736,35 @@ body {
 	background: var(--unknown);
 }
 
+.cz-row__name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Disabled services: shown but not selectable (unreliable upstream source). */
+.cz-row.is-disabled {
+	cursor: help;
+	opacity: 0.55;
+}
+.cz-row.is-disabled input {
+	cursor: not-allowed;
+}
+
+.cz-badge {
+	flex: none;
+	font-size: 0.62rem;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	color: var(--unknown);
+	border: 1px solid var(--unknown);
+	border-radius: 0.6rem;
+	padding: 0.05rem 0.4rem;
+}
+
 /* --- Incidents panel --- */
 .panel {
 	position: fixed;
