@@ -21,7 +21,9 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 		...init,
 		headers: {
 			"content-type": "application/json; charset=utf-8",
-			"cache-control": "public, max-age=30",
+			// Cron refreshes the snapshot every 5 min, so a 2-min TTL stays well
+			// within the update cadence while roughly quartering cache misses.
+			"cache-control": "public, max-age=120",
 			// Defense-in-depth (the _headers file doesn't apply to Worker responses).
 			"x-content-type-options": "nosniff",
 			"referrer-policy": "no-referrer",
