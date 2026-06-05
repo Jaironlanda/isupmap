@@ -154,6 +154,8 @@ export const SERVICES: Service[] = [
 	{ id: "lemonsqueezy", name: "Lemon Squeezy", category: "Payments", weight: 3, source: { type: "rss", url: "https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss", statusUrl: "https://status.lemonsqueezy.com" }, disabled: "Lemon Squeezy's status feed now returns an HTML page instead of a feed, so its status can't be resolved." },
 	{ id: "square", name: "Square", category: "Payments", weight: 5, source: { type: "statuspage", base: "https://www.issquareup.com" } },
 	{ id: "klarna", name: "Klarna", category: "Payments", weight: 4, source: { type: "statuspage", base: "https://status.klarna.com" } },
+	// PayPal uses a custom status page (not Atlassian Statuspage) — RSS is the reliable path.
+	{ id: "paypal", name: "PayPal", category: "Payments", weight: 8, source: { type: "rss", url: "https://www.paypal-status.com/feed/rss", statusUrl: "https://www.paypal-status.com/product/production" } },
 
 	// --- Communication ---
 	{ id: "discord", name: "Discord", category: "Communication", weight: 6, source: { type: "statuspage", base: "https://discordstatus.com" } },

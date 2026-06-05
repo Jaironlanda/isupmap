@@ -31,7 +31,7 @@ const LOGO_DOMAIN = {
 	cursor: "cursor.com",
 	stripe: "stripe.com", coinbase: "coinbase.com", shopify: "shopify.com",
 	plaid: "plaid.com", paddle: "paddle.com", lemonsqueezy: "lemonsqueezy.com",
-	square: "squareup.com", klarna: "klarna.com",
+	square: "squareup.com", klarna: "klarna.com", paypal: "paypal.com",
 	discord: "discord.com", slack: "slack.com", zoom: "zoom.us",
 	twilio: "twilio.com", sendgrid: "sendgrid.com", resend: "resend.com", mailgun: "mailgun.com",
 	intercom: "intercom.com", hubspot: "hubspot.com",
