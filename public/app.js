@@ -123,7 +123,10 @@ function renderView() {
 
 async function poll() {
 	try {
-		const res = await fetch("/api/status", { headers: { accept: "application/json" } });
+		// `no-store` bypasses the browser HTTP cache so the 45s poll always gets a
+		// fresh snapshot. Cloudflare's edge cache still serves (and shields D1) —
+		// `no-store` is a browser-only directive and doesn't bust the edge cache.
+		const res = await fetch("/api/status", { cache: "no-store", headers: { accept: "application/json" } });
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const data = await res.json();
 		latest = data.services;
@@ -516,7 +519,7 @@ function formatDuration(ms) {
 async function loadIncidents() {
 	incidentsList.innerHTML = `<p class="panel__empty">Loading…</p>`;
 	try {
-		const res = await fetch("/api/incidents?limit=40", { headers: { accept: "application/json" } });
+		const res = await fetch("/api/incidents?limit=40", { cache: "no-store", headers: { accept: "application/json" } });
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const { incidents } = await res.json();
 		renderIncidents(incidents);
@@ -1171,7 +1174,7 @@ async function openDetail(svc) {
 	// Incident history for this service (client-side filter of the recent log).
 	detailBody.querySelector(".detail__incidents").innerHTML = `<p class="panel__empty">Loading history…</p>`;
 	try {
-		const res = await fetch("/api/incidents?limit=100", { headers: { accept: "application/json" } });
+		const res = await fetch("/api/incidents?limit=100", { cache: "no-store", headers: { accept: "application/json" } });
 		const { incidents } = await res.json();
 		const mine = incidents.filter((i) => i.serviceId === svc.id);
 		renderDetailIncidents(mine);
