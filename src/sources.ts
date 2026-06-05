@@ -345,6 +345,11 @@ async function fetchHttp(service: Service, url: string): Promise<ServiceStatus> 
 
 /** Resolve a single service's status, mapping any failure to `unknown`. */
 export async function resolveStatus(service: Service): Promise<ServiceStatus> {
+	// Disabled services have no usable upstream feed — skip the fetch and surface
+	// them as permanently `unknown` with the reason as the description.
+	if (service.disabled) {
+		return { ...result(service, "unknown", service.disabled), disabled: service.disabled };
+	}
 	try {
 		switch (service.source.type) {
 			case "statuspage":

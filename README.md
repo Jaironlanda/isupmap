@@ -91,6 +91,12 @@ read-only aggregator and is not affiliated with any of these services. The list
 lives in [src/services.ts](src/services.ts); for Statuspage entries the
 `/api/v2/summary.json` path is appended to the `base` shown below.
 
+Rows marked **⊘ disabled** have an upstream that no longer publishes a usable
+machine-readable feed, so their status can't be resolved. They are shown as
+permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
+**Customize** panel with the reason on hover — see
+[Disabled services](#disabled-services) below.
+
 | Service | Category | Source | Endpoint / base |
 |---------|----------|--------|-----------------|
 | GitHub | Developer & Cloud | Statuspage | `https://www.githubstatus.com` |
@@ -106,10 +112,10 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Render | Developer & Cloud | Statuspage | `https://status.render.com` |
 | AWS | Developer & Cloud | RSS | `https://status.aws.amazon.com/rss/all.rss` |
 | Google Cloud | Developer & Cloud | RSS | `https://status.cloud.google.com/en/feed.atom` |
-| Microsoft Azure | Developer & Cloud | RSS | `https://azure.status.microsoft/en-us/status/feed/` |
+| Microsoft Azure | Developer & Cloud | RSS · **⊘ disabled** | `https://azure.status.microsoft/en-us/status/feed/` |
 | Supabase | Developer & Cloud | Statuspage | `https://status.supabase.com` |
 | Fly.io | Developer & Cloud | Statuspage | `https://status.flyio.net` |
-| Railway | Developer & Cloud | RSS | `https://railway.betteruptime.com/feed.rss` |
+| Railway | Developer & Cloud | RSS · **⊘ disabled** | `https://railway.betteruptime.com/feed.rss` |
 | Neon | Developer & Cloud | RSS | `https://neonstatus.com/pages/6878fc85709daa75be6c7e3c/rss` |
 | PlanetScale | Developer & Cloud | Statuspage | `https://www.planetscalestatus.com` |
 | Bunny.net | Developer & Cloud | Statuspage | `https://status.bunny.net` |
@@ -120,8 +126,8 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Elastic | Developer & Cloud | Statuspage | `https://status.elastic.co` |
 | New Relic | Developer & Cloud | Statuspage | `https://status.newrelic.com` |
 | Grafana | Developer & Cloud | Statuspage | `https://status.grafana.com` |
-| PagerDuty | Developer & Cloud | RSS | `https://status.pagerduty.com/history.rss` |
-| Algolia | Developer & Cloud | RSS | `https://status.algolia.com/history.rss` |
+| PagerDuty | Developer & Cloud | RSS · **⊘ disabled** | `https://status.pagerduty.com/history.rss` |
+| Algolia | Developer & Cloud | RSS · **⊘ disabled** | `https://status.algolia.com/history.rss` |
 | GitLab | Developer & Cloud | RSS | `https://status.gitlab.com/pages/5b36dc6502d06804c08349f7/rss` |
 | Docker | Developer & Cloud | RSS | `https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss` |
 | Appwrite | Developer & Cloud | RSS | `https://status.appwrite.online/feed.rss` |
@@ -147,7 +153,7 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | Shopify | Payments | Statuspage | `https://www.shopifystatus.com` |
 | Plaid | Payments | Statuspage | `https://status.plaid.com` |
 | Paddle | Payments | Statuspage | `https://paddlestatus.com` |
-| Lemon Squeezy | Payments | RSS | `https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss` |
+| Lemon Squeezy | Payments | RSS · **⊘ disabled** | `https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss` |
 | Square | Payments | Statuspage | `https://www.issquareup.com` |
 | Klarna | Payments | Statuspage | `https://status.klarna.com` |
 | Discord | Communication | Statuspage | `https://discordstatus.com` |
@@ -184,6 +190,26 @@ lives in [src/services.ts](src/services.ts); for Statuspage entries the
 | PlayStation Network | Gaming & Entertainment | HTTP ping | `https://status.playstation.com` |
 | Riot Games | Gaming & Entertainment | HTTP ping | `https://status.riotgames.com` |
 | Spotify | Gaming & Entertainment | HTTP ping | `https://open.spotify.com` |
+
+### Disabled services
+
+A service is **disabled** when its upstream stops publishing a status feed we can
+parse. Rather than show a stale or misleading state, a disabled service is set to
+`unknown` (grey), kept out of the heatmap, and listed — locked and labelled
+`disabled`, with the reason on hover — in the **Customize** panel. The resolver
+skips disabled services entirely (no fetch). To disable one, add a `disabled:
+"<reason>"` string to its entry in [src/services.ts](src/services.ts).
+
+Currently disabled (upstream no longer exposes a machine-readable feed, verified
+2026-06-05):
+
+| Service | Reason |
+|---------|--------|
+| Microsoft Azure | Global status feed publishes no machine-readable incident items (empty channel). |
+| Railway | Migrated to a JS-rendered status page (`status.railway.com`); the old Betterstack feed is empty. |
+| PagerDuty | `history.rss` now returns an HTML page instead of XML. |
+| Algolia | `history.rss` now returns an HTML page instead of XML. |
+| Lemon Squeezy | The Oh Dear feed URL now serves an HTML subscribe page instead of a feed. |
 
 To add a service, append an entry to [src/services.ts](src/services.ts) with its
 `category`, a `weight` (tile size), and a `source`. Brand logos are

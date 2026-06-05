@@ -97,7 +97,9 @@ const prefs = loadPrefs();
 /** The services to actually render, after applying hide + problems-only prefs. */
 function visibleServices() {
 	if (!latest) return [];
-	let v = latest.filter((s) => !prefs.hidden.has(s.id));
+	// Disabled services (unreliable source) are never tiled — they only appear,
+	// locked, in the Customize panel.
+	let v = latest.filter((s) => !s.disabled && !prefs.hidden.has(s.id));
 	if (prefs.problemsOnly) v = v.filter((s) => s.status !== "up");
 	return v;
 }
@@ -107,7 +109,7 @@ function renderView() {
 	if (!latest) return;
 	const v = visibleServices();
 	if (v.length === 0) {
-		const anyVisible = latest.some((s) => !prefs.hidden.has(s.id));
+		const anyVisible = latest.some((s) => !s.disabled && !prefs.hidden.has(s.id));
 		const msg =
 			prefs.problemsOnly && anyVisible
 				? "✓ All selected services are operational"
@@ -597,7 +599,10 @@ function renderCustomize() {
 		byCategory.get(svc.category).push(svc);
 	}
 
-	const shown = latest.filter((s) => !prefs.hidden.has(s.id)).length;
+	// Disabled services can't be selected, so they're excluded from the
+	// shown/total tallies (which describe the selectable set).
+	const selectableTotal = latest.filter((s) => !s.disabled).length;
+	const shown = latest.filter((s) => !s.disabled && !prefs.hidden.has(s.id)).length;
 	const countEl = document.getElementById("customizeCount");
 	const searching = czQuery.length > 0;
 
@@ -611,8 +616,10 @@ function renderCustomize() {
 		if (matches.length === 0) continue;
 		matchCount += matches.length;
 
-		const allShown = items.every((s) => !prefs.hidden.has(s.id));
-		const shownInCat = items.filter((s) => !prefs.hidden.has(s.id)).length;
+		// Category toggle + counts only consider selectable (non-disabled) services.
+		const selectable = items.filter((s) => !s.disabled);
+		const allShown = selectable.length > 0 && selectable.every((s) => !prefs.hidden.has(s.id));
+		const shownInCat = selectable.filter((s) => !prefs.hidden.has(s.id)).length;
 		// Searching force-expands so matches are always visible.
 		const collapsed = !searching && czCollapsed.has(category);
 
@@ -621,14 +628,24 @@ function renderCustomize() {
 				<i data-lucide="chevron-down" class="cz-group__chevron" aria-hidden="true"></i>
 				<input class="cz-group__check" type="checkbox" data-category="${escapeHtml(category)}" ${allShown ? "checked" : ""} aria-label="Toggle all ${escapeHtml(category)}" />
 				<span class="cz-group__name">${escapeHtml(category)}</span>
-				<span class="cz-group__count">${shownInCat}/${items.length}</span>
+				<span class="cz-group__count">${shownInCat}/${selectable.length}</span>
 			</div>
 			<div class="cz-group__body">`;
 		for (const svc of matches) {
+			if (svc.disabled) {
+				// Locked row: can't be toggled; explains why on hover.
+				html += `<div class="cz-row is-disabled" title="${escapeHtml(svc.disabled)}">
+					<input type="checkbox" disabled />
+					<span class="dot is-unknown"></span>
+					<span class="cz-row__name">${escapeHtml(svc.name)}</span>
+					<span class="cz-badge">disabled</span>
+				</div>`;
+				continue;
+			}
 			html += `<label class="cz-row">
 				<input type="checkbox" data-id="${escapeHtml(svc.id)}" ${prefs.hidden.has(svc.id) ? "" : "checked"} />
 				<span class="dot is-${svc.status}"></span>
-				<span>${escapeHtml(svc.name)}</span>
+				<span class="cz-row__name">${escapeHtml(svc.name)}</span>
 			</label>`;
 		}
 		html += `</div></div>`;
@@ -640,7 +657,7 @@ function renderCustomize() {
 	} else {
 		countEl.textContent = searching
 			? `${matchCount} match${matchCount === 1 ? "" : "es"}`
-			: `${shown} of ${latest.length} shown`;
+			: `${shown} of ${selectableTotal} shown`;
 	}
 
 	customizeList.innerHTML = html;
@@ -666,7 +683,7 @@ customizeList.addEventListener("change", (e) => {
 		if (cb.checked) prefs.hidden.delete(cb.dataset.id);
 		else prefs.hidden.add(cb.dataset.id);
 	} else if (cb.dataset.category) {
-		for (const svc of latest.filter((s) => s.category === cb.dataset.category)) {
+		for (const svc of latest.filter((s) => s.category === cb.dataset.category && !s.disabled)) {
 			if (cb.checked) prefs.hidden.delete(svc.id);
 			else prefs.hidden.add(svc.id);
 		}

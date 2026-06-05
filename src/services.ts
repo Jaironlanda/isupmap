@@ -28,6 +28,13 @@ export interface Service {
 	category: string;
 	weight: number;
 	source: ServiceSource;
+	/**
+	 * If set, the service is shown as permanently `unknown` (grey) and cannot be
+	 * resolved/selected — its upstream no longer publishes a usable status feed.
+	 * The string is the human-readable reason, surfaced in the Customize panel on
+	 * hover. Disabled services are skipped by the resolver (no fetch).
+	 */
+	disabled?: string;
 }
 
 /** Extra context shown in the hover card. All fields optional/best-effort. */
@@ -55,6 +62,8 @@ export interface ServiceStatus {
 	description: string;
 	/** Optional richer data surfaced on hover. */
 	details?: ServiceDetails;
+	/** Reason the service is disabled (unreliable source), if applicable. */
+	disabled?: string;
 }
 
 export const SERVICES: Service[] = [
@@ -74,12 +83,14 @@ export const SERVICES: Service[] = [
 	{ id: "aws", name: "AWS", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://status.aws.amazon.com/rss/all.rss" } },
 	// Google Cloud publishes an Atom incident feed (not an Atlassian Statuspage).
 	{ id: "gcp", name: "Google Cloud", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://status.cloud.google.com/en/feed.atom", statusUrl: "https://status.cloud.google.com/" } },
-	// Azure publishes an RSS incident feed (not an Atlassian Statuspage).
-	{ id: "azure", name: "Microsoft Azure", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://azure.status.microsoft/en-us/status/feed/", statusUrl: "https://azure.status.microsoft/en-us/status" } },
+	// Azure's global status feed no longer publishes machine-readable incident
+	// items (empty channel), so its status can't be resolved reliably.
+	{ id: "azure", name: "Microsoft Azure", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://azure.status.microsoft/en-us/status/feed/", statusUrl: "https://azure.status.microsoft/en-us/status" }, disabled: "Azure's status feed no longer publishes machine-readable incidents, so its status can't be resolved." },
 	{ id: "supabase", name: "Supabase", category: "Developer & Cloud", weight: 6, source: { type: "statuspage", base: "https://status.supabase.com" } },
 	{ id: "flyio", name: "Fly.io", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://status.flyio.net" } },
-	// Railway uses Betterstack (not Atlassian Statuspage) — RSS is the reliable path.
-	{ id: "railway", name: "Railway", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://railway.betteruptime.com/feed.rss" } },
+	// Railway moved to a JS-rendered status page (status.railway.com) with no
+	// machine-readable feed; the old Betterstack feed is empty/abandoned.
+	{ id: "railway", name: "Railway", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://railway.betteruptime.com/feed.rss", statusUrl: "https://status.railway.com" }, disabled: "Railway's status page no longer exposes a machine-readable feed, so its status can't be resolved." },
 	// Neon uses status.io — RSS is the reliable path.
 	{ id: "neon", name: "Neon", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://neonstatus.com/pages/6878fc85709daa75be6c7e3c/rss" } },
 	{ id: "planetscale", name: "PlanetScale", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://www.planetscalestatus.com" } },
@@ -93,9 +104,10 @@ export const SERVICES: Service[] = [
 	{ id: "elastic", name: "Elastic", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.elastic.co" } },
 	{ id: "newrelic", name: "New Relic", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.newrelic.com" } },
 	{ id: "grafana", name: "Grafana", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.grafana.com" } },
-	// PagerDuty & Algolia gate their Statuspage JSON API (403/empty) but leave the RSS feed open.
-	{ id: "pagerduty", name: "PagerDuty", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://status.pagerduty.com/history.rss" } },
-	{ id: "algolia", name: "Algolia", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://status.algolia.com/history.rss" } },
+	// PagerDuty & Algolia migrated to JS-rendered status pages — their RSS feeds
+	// now return an HTML document instead of XML, so neither can be parsed.
+	{ id: "pagerduty", name: "PagerDuty", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://status.pagerduty.com/history.rss" }, disabled: "PagerDuty's RSS feed now returns an HTML page instead of a feed, so its status can't be resolved." },
+	{ id: "algolia", name: "Algolia", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://status.algolia.com/history.rss" }, disabled: "Algolia's RSS feed now returns an HTML page instead of a feed, so its status can't be resolved." },
 	// GitLab uses status.io (not Atlassian Statuspage) — RSS is the reliable path.
 	{ id: "gitlab", name: "GitLab", category: "Developer & Cloud", weight: 6, source: { type: "rss", url: "https://status.gitlab.com/pages/5b36dc6502d06804c08349f7/rss" } },
 	// Docker uses status.io (not Atlassian Statuspage) — RSS is the reliable path.
@@ -135,9 +147,9 @@ export const SERVICES: Service[] = [
 	{ id: "shopify", name: "Shopify", category: "Payments", weight: 6, source: { type: "statuspage", base: "https://www.shopifystatus.com" } },
 	{ id: "plaid", name: "Plaid", category: "Payments", weight: 4, source: { type: "statuspage", base: "https://status.plaid.com" } },
 	{ id: "paddle", name: "Paddle", category: "Payments", weight: 3, source: { type: "statuspage", base: "https://paddlestatus.com" } },
-	// Lemon Squeezy uses Oh Dear for status — RSS is the reliable path.
-	// statusUrl needed: the feed lives at a sub-path of ohdear.app, so origin alone would link to the wrong page.
-	{ id: "lemonsqueezy", name: "Lemon Squeezy", category: "Payments", weight: 3, source: { type: "rss", url: "https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss", statusUrl: "https://ohdear.app/status-page/lemon-squeezy-status" } },
+	// Lemon Squeezy's Oh Dear feed URL now serves an HTML subscribe page rather
+	// than a feed, so its status can't be resolved.
+	{ id: "lemonsqueezy", name: "Lemon Squeezy", category: "Payments", weight: 3, source: { type: "rss", url: "https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss", statusUrl: "https://status.lemonsqueezy.com" }, disabled: "Lemon Squeezy's status feed now returns an HTML page instead of a feed, so its status can't be resolved." },
 	{ id: "square", name: "Square", category: "Payments", weight: 5, source: { type: "statuspage", base: "https://www.issquareup.com" } },
 	{ id: "klarna", name: "Klarna", category: "Payments", weight: 4, source: { type: "statuspage", base: "https://status.klarna.com" } },
 

@@ -57,6 +57,8 @@ export interface ApiService {
 	description: string;
 	details?: unknown;
 	uptime: { day: number; week: number };
+	/** Reason the service is disabled (unreliable source), if applicable. */
+	disabled?: string;
 }
 
 /**

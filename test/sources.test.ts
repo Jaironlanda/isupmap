@@ -304,3 +304,15 @@ describe("error handling", () => {
 		expect(r.description).toBe("Timed out");
 	});
 });
+
+describe("disabled services", () => {
+	it("short-circuits to unknown without fetching, surfacing the reason", async () => {
+		const reason = "Upstream no longer publishes a usable feed.";
+		const service: Service = { ...svc({ type: "rss", url: "https://example.com/feed.rss" }), disabled: reason };
+		const r = await resolveStatus(service);
+		expect(r.status).toBe("unknown");
+		expect(r.description).toBe(reason);
+		expect(r.disabled).toBe(reason);
+		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+});
