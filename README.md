@@ -156,6 +156,7 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Lemon Squeezy | Payments | RSS · **⊘ disabled** | `https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss` |
 | Square | Payments | Statuspage | `https://www.issquareup.com` |
 | Klarna | Payments | Statuspage | `https://status.klarna.com` |
+| PayPal | Payments | RSS | `https://www.paypal-status.com/feed/rss` |
 | Discord | Communication | Statuspage | `https://discordstatus.com` |
 | Slack | Communication | RSS | `https://slack-status.com/feed/rss` |
 | Zoom | Communication | Statuspage | `https://www.zoomstatus.com` |
