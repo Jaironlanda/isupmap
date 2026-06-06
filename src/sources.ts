@@ -15,6 +15,8 @@ const UPSTREAM_TIMEOUT_MS = 15000;
 const UPSTREAM_CACHE_TTL = 30;
 /** RSS incidents older than this are treated as resolved/stale. */
 const RSS_FRESH_WINDOW_MS = 48 * 60 * 60 * 1000;
+/** Pause before the single transient-failure retry (see {@link fetchWithRetry}). */
+const RETRY_BACKOFF_MS = 300;
 
 const xmlParser = new XMLParser({
 	ignoreAttributes: false,
@@ -44,6 +46,35 @@ async function fetchUpstream(url: string, init: RequestInit = {}): Promise<Respo
 		} as RequestInit);
 	} finally {
 		clearTimeout(timer);
+	}
+}
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * {@link fetchUpstream} with one retry on a *transient* failure — a thrown
+ * network/timeout error or a `5xx` response. Status pages occasionally blip
+ * (a brief 502, a dropped connection); without a retry that single blip would
+ * collapse to `unknown` and hide the real status. One extra attempt after a
+ * short backoff turns most blips into an accurate reading; a persistent failure
+ * still surfaces (the 5xx is returned, or the error rethrown) so callers map it
+ * to `unknown`/`down` as before.
+ */
+async function fetchWithRetry(url: string, init: RequestInit = {}): Promise<Response> {
+	for (let attempt = 0; ; attempt++) {
+		const last = attempt > 0;
+		try {
+			const res = await fetchUpstream(url, init);
+			// A 5xx on the first try is worth one retry; on the retry, return as-is.
+			if (!last && res.status >= 500) {
+				await delay(RETRY_BACKOFF_MS);
+				continue;
+			}
+			return res;
+		} catch (err) {
+			if (last) throw err;
+			await delay(RETRY_BACKOFF_MS);
+		}
 	}
 }
 
@@ -102,7 +133,7 @@ function statuspageStatus(indicator: string, total: number, majorOutages: number
  * so the hover card can show component rollups and active incidents.
  */
 async function fetchStatuspage(service: Service, base: string): Promise<ServiceStatus> {
-	const res = await fetchUpstream(`${base.replace(/\/$/, "")}/api/v2/summary.json`);
+	const res = await fetchWithRetry(`${base.replace(/\/$/, "")}/api/v2/summary.json`);
 	if (!res.ok) return result(service, "unknown", `Status API returned HTTP ${res.status}`);
 
 	const data = (await res.json()) as StatuspageSummary;
@@ -292,7 +323,7 @@ async function fetchRss(service: Service, url: string): Promise<ServiceStatus> {
 	// entry.link points to a specific incident post — not the right target for "Visit status page".
 	const statusPageUrl = rssSource.statusUrl ?? new URL(url).origin;
 
-	const res = await fetchUpstream(url);
+	const res = await fetchWithRetry(url);
 	if (!res.ok) return result(service, "unknown", `Feed returned HTTP ${res.status}`);
 
 	const entry = latestEntry(xmlParser.parse(await res.text()));
@@ -330,7 +361,7 @@ const BOT_WALL_CODES = new Set([401, 403, 405, 406, 429]);
 async function fetchHttp(service: Service, url: string): Promise<ServiceStatus> {
 	const httpSource = service.source as Extract<ServiceSource, { type: "http" }>;
 	const start = Date.now();
-	const res = await fetchUpstream(url, { method: "GET", redirect: "follow" });
+	const res = await fetchWithRetry(url, { method: "GET", redirect: "follow" });
 	const ms = Date.now() - start;
 	const baseDetails = { url: httpSource.statusUrl ?? url };
 	if (res.ok || (res.status >= 300 && res.status < 400)) {
@@ -339,6 +370,10 @@ async function fetchHttp(service: Service, url: string): Promise<ServiceStatus> 
 	// A bot/auth wall means the host is alive; treat as reachable, not an outage.
 	if (BOT_WALL_CODES.has(res.status)) {
 		return result(service, "up", `Reachable (HTTP ${res.status})`, { ...baseDetails, note: `Probe blocked (HTTP ${res.status}) — host responded in ${ms}ms` });
+	}
+	// A server error (5xx) on the host itself means it's effectively down for users.
+	if (res.status >= 500) {
+		return result(service, "down", `Server error (HTTP ${res.status})`, { ...baseDetails, note: `Responded in ${ms}ms (HTTP ${res.status})` });
 	}
 	return result(service, "degraded", `Unexpected response (HTTP ${res.status})`, { ...baseDetails, note: `Responded in ${ms}ms (HTTP ${res.status})` });
 }

@@ -326,6 +326,16 @@ body {
 	50%      { opacity: 1; }
 }
 
+/* Stale snapshot warning: the cron hasn't refreshed the data recently. */
+.updated.is-stale {
+	color: var(--degraded-hi);
+	font-weight: 600;
+}
+.updated.is-stale .updated__pulse {
+	background: var(--degraded-hi);
+	animation: none;
+}
+
 .legend {
 	display: flex;
 	gap: 0.35rem;
