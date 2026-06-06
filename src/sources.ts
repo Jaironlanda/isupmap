@@ -165,7 +165,7 @@ async function fetchStatuspage(service: Service, base: string): Promise<ServiceS
 
 interface FeedEntry {
 	title: string;
-	/** Raw entry body (RSS `description` / Atom `summary`|`content`); may contain HTML. */
+	/** Raw entry body (RSS `description`|`content:encoded` / Atom `summary`|`content`); may contain HTML. */
 	description: string;
 	date: number | null;
 	link: string | null;
@@ -196,8 +196,9 @@ function latestEntry(doc: unknown): FeedEntry | null {
 		const parsed = rawDate ? Date.parse(rawDate) : NaN;
 		const date = Number.isNaN(parsed) ? null : parsed;
 		const title = nodeText(item.title);
-		// RSS uses `description`; Atom uses `summary` or `content`.
-		const description = nodeText(item.description ?? item.summary ?? item.content);
+		// RSS uses `description` (or namespaced `content:encoded`, kept verbatim by the
+		// parser — e.g. PayPal); Atom uses `summary` or `content`.
+		const description = nodeText(item.description ?? item["content:encoded"] ?? item.summary ?? item.content);
 		// RSS link is a string; Atom link is an element with an href attribute.
 		const linkRaw = item.link;
 		const link = typeof linkRaw === "object" ? (linkRaw?.["@_href"] ?? null) : (linkRaw ?? null);

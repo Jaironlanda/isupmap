@@ -207,6 +207,17 @@ describe("rss", () => {
 		expect((await resolve()).status).toBe("down");
 	});
 
+	it("reads the body from a namespaced content:encoded element (PayPal-style)", async () => {
+		// PayPal's feed carries the incident body in <content:encoded>, not <description>.
+		// The parser keeps the namespace prefix, so without that fallback the body is lost
+		// and a real incident collapses to the title-only path (here: a false 'unknown').
+		const body = "May 6 17:43 PDT Investigating - We are aware of a major outage affecting payments.";
+		const item = `<item><title>Service event (PP-LIVE-1)</title><content:encoded><![CDATA[${body}]]></content:encoded><pubDate>${now()}</pubDate><link>https://x/1</link></item>`;
+		const feed = `<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>${item}</channel></rss>`;
+		fetchSpy.mockResolvedValue(reply(feed));
+		expect((await resolve()).status).toBe("down");
+	});
+
 	it("is up when the latest entry is stale (outside the fresh window)", async () => {
 		fetchSpy.mockResolvedValue(reply(rss("Major outage", old())));
 		expect((await resolve()).status).toBe("up");
