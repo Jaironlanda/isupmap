@@ -37,31 +37,39 @@ and a mobile-friendly detail sheet.
 
 ```
 Cron (every 5m) ─▶ scheduled() ─▶ resolveStatus() × N      ┌─▶ Statuspage JSON   ({base}/api/v2/summary.json)
-                       │                                    ├─▶ RSS / Atom feed   (fast-xml-parser)
+                       │           (1 retry on a blip)      ├─▶ RSS / Atom feed   (fast-xml-parser)
                        │   (src/sources.ts) ────────────────┘
                        │                                    └─▶ HTTP reachability ping
-                       └─▶ persist to D1 (src/db.ts): upsert `current`,
-                           open/close `incidents`; daily retention sweep
-Browser (public/) ─poll /api/status every 45s─▶ Worker reads D1 (Cache-API fronted) ─▶ treemap + uptime
-                  └─open detail / panel ───────▶ GET /api/incidents (cached)        ─▶ incident history
+                       ├─▶ persist to D1 (src/db.ts): flap-dampen → upsert `current`,
+                       │   open/close `incidents`; daily retention sweep
+                       └─▶ publish finished snapshot to KV (SNAPSHOT_KV)
+Browser (public/) ─poll /api/status every 45s─▶ Worker reads KV (Cache-API fronted) ─▶ treemap + uptime
+                  └─open detail / panel ───────▶ GET /api/incidents (D1, cached)     ─▶ incident history
 ```
 
 - A **Cron Trigger** (`*/5 * * * *`) invokes `scheduled()`, which resolves every
-  service **concurrently** (`Promise.allSettled`, each upstream guarded by an 8s
-  timeout + edge caching) and persists the result to D1. Transitions to/from a
-  non-`up` state open and close rows in an `incidents` table. Resolved incidents
-  older than 90 days are pruned once a day (~03:00 UTC).
-- `GET /api/status` is a **fast D1 read** of the latest snapshot, with per-service
-  **uptime (24h / 7d)** computed from incident intervals. It's fronted by the
-  **Cache API** (~30s), so the fan-out runs at most once per TTL; before the first
-  cron run populates D1 it falls back to a live fan-out so the page is never blank.
-- `GET /api/incidents` returns the recent incident log (also Cache-API fronted).
+  service **concurrently** (`Promise.allSettled`, each upstream guarded by a 15s
+  timeout + edge caching, with **one retry** on a transient blip so a flaky
+  connection doesn't read as `unknown`). It persists the result to D1, then
+  publishes the finished snapshot to **KV** for the read path.
+- **Flap-dampening** (`src/db.ts`) — a non-`up` status must hold for **2
+  consecutive polls** before it is committed to `current` or opens an incident;
+  recovery to `up` is immediate, and an `unknown` (timed-out) probe holds the last
+  status rather than resolving a real incident. A single glitchy upstream read
+  therefore never paints a false outage. Resolved incidents older than 90 days are
+  pruned once a day (~03:00 UTC).
+- `GET /api/status` is a **fast KV read** of the snapshot the cron publishes (no D1
+  query on the hot path), with per-service **uptime (24h / 7d)**. It's fronted by
+  the **Cache API**; before the first cron run it serves a "warming" snapshot
+  (never a live fan-out). The response carries a `stale` flag (older than 3 cron
+  cycles) so the UI warns instead of showing frozen data.
+- `GET /api/incidents` returns the recent incident log from D1 (Cache-API fronted).
 - `GET /api/summary` returns a single **overall-status rollup** (worst status
-  wins) plus a headline (`"All systems operational"` / `"2 down, 1 degraded"`)
-  and per-status counts — handy for compact embeds, badges, or a status banner.
-  Add `?format=shields` for a [shields.io endpoint badge](https://shields.io/badges/endpoint-badge)
+  wins) plus a headline (`"All systems operational"` / `"2 down, 1 degraded"`),
+  per-status counts, and the same `stale` flag — handy for compact embeds, badges,
+  or a status banner. Add `?format=shields` for a [shields.io endpoint badge](https://shields.io/badges/endpoint-badge)
   payload (status-colored), which powers the live badge at the top of this README.
-  Same D1-read/live-fallback and Cache-API fronting as `/api/status`.
+  Same KV-read + Cache-API fronting as `/api/status`.
 - All API routes are **rate-limited** per IP (60 req / 60s) via a Workers
   rate-limit binding.
 - **Crawlable pages** — the dashboard is a client-rendered SPA, so for SEO the
@@ -233,7 +241,8 @@ and drop a matching `<id>.png` (a ~128px favicon) in
 - **Rate limiting** — `/api/*` is capped at 60 requests / 60s per IP via a
   Workers rate-limit binding (`API_RATE_LIMITER`); over-limit returns `429`.
 - **Caching** — `/api/status`, `/api/summary` and `/api/incidents` are wrapped in
-  the Cache API, so repeated requests are served without re-hitting D1 or upstreams.
+  the Cache API; `/api/status` and `/api/summary` read the KV snapshot (D1 stays off
+  the hot read path), so repeated requests cost neither a D1 query nor an upstream hit.
 - **Headers / CSP** — [public/_headers](public/_headers) sets a strict
   `Content-Security-Policy` (no inline scripts), `X-Content-Type-Options`,
   `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy` on static
@@ -263,8 +272,8 @@ Trigger the cron and inspect the API locally:
 
 ```sh
 npm run dev:cron
-curl "http://localhost:8787/__scheduled"      # runs scheduled() once → persists a snapshot
-curl -s http://localhost:8787/api/status | jq # served from D1, includes per-service uptime
+curl "http://localhost:8787/__scheduled"      # runs scheduled() once → persists to D1 + publishes to KV
+curl -s http://localhost:8787/api/status | jq # served from KV, includes per-service uptime + stale flag
 curl -s http://localhost:8787/api/incidents | jq
 curl -s http://localhost:8787/api/summary | jq # overall status rollup + headline
 ```
@@ -289,8 +298,9 @@ provision a D1 database, and deploy — no manual config needed.
 ### Manual deploy
 
 ```sh
-npx wrangler d1 create isupmap   # creates the D1 database; paste the printed id into wrangler.jsonc
-npm run deploy                 # deploys the Worker and applies schema.sql to the remote D1
+npx wrangler d1 create isupmap            # creates the D1 database; paste the printed id into wrangler.jsonc
+npx wrangler kv namespace create SNAPSHOT_KV  # creates the snapshot cache; paste the id into wrangler.jsonc
+npm run deploy                            # deploys the Worker and applies schema.sql to the remote D1
 ```
 
 > Re-run `npm run db:schema:remote` after adding indexes/tables
@@ -317,10 +327,10 @@ src/
   index.ts           Worker entry: scheduled() cron + rate-limited/cached /api/* + SSR /status pages & /sitemap.xml
   services.ts        Curated service list + status data sources + shared types
   sources.ts         Per-source-type fetch + normalize (Statuspage/RSS/HTTP)
-  db.ts              D1 persistence: snapshot upserts, incident transitions, uptime, retention
+  db.ts              D1 persistence: flap-dampening, snapshot upserts, incident transitions, uptime, retention
   pages.ts           Server-rendered status pages (/status, /status/<id>) + sitemap.xml
-schema.sql           D1 schema (current / incidents / meta) + indexes
-wrangler.jsonc       Worker config (main, assets, cron, D1, rate limit)
+schema.sql           D1 schema (current / incidents / meta / probe_state) + indexes
+wrangler.jsonc       Worker config (main, assets, cron, D1, KV snapshot cache, rate limit)
 ```
 
 ## Notes & limitations

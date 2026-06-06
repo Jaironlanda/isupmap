@@ -52,6 +52,7 @@ function logoUrl(id) {
 
 const gridEl = document.getElementById("grid");
 const updatedEl = document.getElementById("updatedText");
+const updatedBoxEl = document.getElementById("updated");
 const toastsEl = document.getElementById("toasts");
 const tooltipEl = document.getElementById("tooltip");
 
@@ -121,6 +122,8 @@ function renderView() {
 	render(v);
 }
 
+let warmRetry = null;
+
 async function poll() {
 	try {
 		// `no-store` bypasses the browser HTTP cache so the 45s poll always gets a
@@ -131,10 +134,14 @@ async function poll() {
 		const data = await res.json();
 		latest = data.services;
 		renderView();
-		updateTimestamp(data.updatedAt);
+		updateTimestamp(data.updatedAt, data.stale, data.ageMs);
 		updateChrome(latest);
 		detectChanges(latest);
 		handleDeepLinkOnce();
+		// Before the first cron run the snapshot is still "warming" (no updatedAt):
+		// poll again shortly instead of waiting the full 45s so the grid fills in fast.
+		clearTimeout(warmRetry);
+		if (data.updatedAt == null) warmRetry = setTimeout(poll, 4000);
 	} catch (err) {
 		if (!latest) {
 			gridEl.innerHTML = `<p class="grid__error">Couldn't load status (${escapeHtml(String(err.message ?? err))}). Retrying…</p>`;
@@ -143,9 +150,27 @@ async function poll() {
 	}
 }
 
-function updateTimestamp(iso) {
-	const when = iso ? new Date(iso) : new Date();
-	updatedEl.textContent = `Updated ${when.toLocaleTimeString()}`;
+function updateTimestamp(updatedAt, stale = false, ageMs = null) {
+	const when = updatedAt ? new Date(updatedAt) : new Date();
+	// When the snapshot is stale (the cron hasn't refreshed in a while), warn
+	// instead of implying the status is live. Otherwise show the refresh time.
+	if (stale) {
+		const ago = ageMs != null ? ` (${formatAge(ageMs)} ago)` : "";
+		updatedEl.textContent = `Data may be outdated${ago}`;
+	} else {
+		updatedEl.textContent = `Updated ${when.toLocaleTimeString()}`;
+	}
+	updatedBoxEl?.classList.toggle("is-stale", Boolean(stale));
+	if (updatedBoxEl) updatedBoxEl.title = stale ? `Last refreshed ${when.toLocaleString()}` : "";
+}
+
+/** Compact "5m" / "2h" / "1d" age from a millisecond duration. */
+function formatAge(ms) {
+	const mins = Math.round(ms / 60000);
+	if (mins < 60) return `${mins}m`;
+	const hours = Math.round(mins / 60);
+	if (hours < 24) return `${hours}h`;
+	return `${Math.round(hours / 24)}d`;
 }
 
 // --- Squarified treemap ---------------------------------------------------

@@ -19,6 +19,40 @@ function isIncident(status: StatusLevel): boolean {
 	return status === "degraded" || status === "down";
 }
 
+/**
+ * Consecutive polls a non-up status must hold before it is "confirmed" (shown in
+ * `current` / opens an incident). With a 5-minute cron, 2 means a bad reading must
+ * survive ~5–10 min — long enough to ride out a single glitchy upstream response.
+ */
+const CONFIRM_THRESHOLD = 2;
+
+/**
+ * Flap-dampening: map the just-observed status to the status we actually commit,
+ * given how many consecutive polls it has held (`streak`) and the previously
+ * committed status (`prev`).
+ *
+ *   - `up`      → committed immediately (recovery is never delayed).
+ *   - `unknown` → a failed/timed-out probe carries no information, so we HOLD the
+ *                 previous committed status (a blip mustn't "resolve" a real
+ *                 incident, nor flip a healthy service grey).
+ *   - `degraded`/`down` → committed only once it has held for CONFIRM_THRESHOLD
+ *                 polls; until then we hold the previous status. A lone glitch
+ *                 (e.g. `down` then `up`) therefore never shows red or opens an
+ *                 incident.
+ */
+function confirmStatus(observed: StatusLevel, streak: number, prev: StatusLevel | undefined): StatusLevel {
+	if (observed === "up") return "up";
+	if (observed === "unknown") return prev ?? "unknown";
+	if (streak >= CONFIRM_THRESHOLD) return observed;
+	return prev ?? "up";
+}
+
+interface ProbeStateRow {
+	service_id: string;
+	observed_status: StatusLevel;
+	streak: number;
+}
+
 interface CurrentRow {
 	service_id: string;
 	name: string;
@@ -67,13 +101,19 @@ export interface ApiService {
  * All writes run in a single batched (transactional) call.
  */
 export async function persistSnapshot(db: D1Database, statuses: ServiceStatus[], now = Date.now()): Promise<void> {
-	// Transition detection only needs to know which services currently have an
-	// OPEN incident. Reading those (0–few rows, served by idx_incidents_open) is
-	// far cheaper than scanning every `current` row each minute.
-	const openRows = await db
-		.prepare("SELECT service_id, status FROM incidents WHERE ended_at IS NULL")
-		.all<{ service_id: string; status: StatusLevel }>();
-	const open = new Map(openRows.results.map((r) => [r.service_id, r.status]));
+	// One round-trip for the three things transition + flap-dampening logic needs:
+	// the open incident per service, the per-service streak, and the previously
+	// committed row (status + copy we hold onto while a non-up reading is unconfirmed).
+	const [openRes, stateRes, currentRes] = await db.batch([
+		db.prepare("SELECT service_id, status FROM incidents WHERE ended_at IS NULL"),
+		db.prepare("SELECT service_id, observed_status, streak FROM probe_state"),
+		db.prepare("SELECT service_id, status, description, details_json FROM current"),
+	]);
+	const open = new Map((openRes.results as { service_id: string; status: StatusLevel }[]).map((r) => [r.service_id, r.status]));
+	const state = new Map((stateRes.results as ProbeStateRow[]).map((r) => [r.service_id, r]));
+	const prevCurrent = new Map(
+		(currentRes.results as { service_id: string; status: StatusLevel; description: string | null; details_json: string | null }[]).map((r) => [r.service_id, r]),
+	);
 
 	const upsertCurrent = db.prepare(
 		`INSERT INTO current (service_id, name, category, weight, status, description, details_json, updated_at)
@@ -82,6 +122,10 @@ export async function persistSnapshot(db: D1Database, statuses: ServiceStatus[],
 		   name = excluded.name, category = excluded.category, weight = excluded.weight,
 		   status = excluded.status, description = excluded.description,
 		   details_json = excluded.details_json, updated_at = excluded.updated_at`,
+	);
+	const upsertState = db.prepare(
+		`INSERT INTO probe_state (service_id, observed_status, streak) VALUES (?, ?, ?)
+		 ON CONFLICT(service_id) DO UPDATE SET observed_status = excluded.observed_status, streak = excluded.streak`,
 	);
 	const openIncident = db.prepare(
 		"INSERT INTO incidents (service_id, status, description, started_at, ended_at) VALUES (?, ?, ?, ?, NULL)",
@@ -92,20 +136,33 @@ export async function persistSnapshot(db: D1Database, statuses: ServiceStatus[],
 	const batch: D1PreparedStatement[] = [];
 
 	for (const s of statuses) {
-		batch.push(
-			upsertCurrent.bind(s.id, s.name, s.category, s.weight, s.status, s.description ?? null, s.details ? JSON.stringify(s.details) : null, now),
-		);
+		const observed = s.status;
+		const prevState = state.get(s.id);
+		const streak = prevState && prevState.observed_status === observed ? prevState.streak + 1 : 1;
+		batch.push(upsertState.bind(s.id, observed, streak));
+
+		const prevRow = prevCurrent.get(s.id);
+		const committed = confirmStatus(observed, streak, prevRow?.status);
+
+		// When the committed status is the one we just observed, write its fresh
+		// description/details; while holding the previous status (unconfirmed bad
+		// reading, or an uninformative `unknown`), keep the previous copy so the
+		// text matches the status shown.
+		const fresh = committed === observed;
+		const description = fresh ? (s.description ?? null) : (prevRow?.description ?? null);
+		const detailsJson = fresh ? (s.details ? JSON.stringify(s.details) : null) : (prevRow?.details_json ?? null);
+		batch.push(upsertCurrent.bind(s.id, s.name, s.category, s.weight, committed, description, detailsJson, now));
 
 		const openStatus = open.get(s.id); // undefined unless an incident is open
 		const wasIncident = openStatus != null;
-		const nowIncident = isIncident(s.status);
+		const nowIncident = isIncident(committed);
 
 		if (!wasIncident && nowIncident) {
-			batch.push(openIncident.bind(s.id, s.status, s.description ?? null, now));
+			batch.push(openIncident.bind(s.id, committed, description, now));
 		} else if (wasIncident && !nowIncident) {
 			batch.push(closeIncident.bind(now, s.id));
-		} else if (wasIncident && nowIncident && openStatus !== s.status) {
-			batch.push(updateIncident.bind(s.status, s.description ?? null, s.id));
+		} else if (wasIncident && nowIncident && openStatus !== committed) {
+			batch.push(updateIncident.bind(committed, description, s.id));
 		}
 	}
 

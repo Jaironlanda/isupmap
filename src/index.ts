@@ -62,17 +62,42 @@ async function resolveAll(): Promise<ServiceStatus[]> {
 	});
 }
 
-/** Cold-start fallback: live snapshot shaped like the persisted one (no history yet). */
-function liveSnapshot(statuses: ServiceStatus[]): { updatedAt: number; services: ApiService[] } {
-	return {
-		updatedAt: Date.now(),
-		services: statuses.map((s) => ({ ...s, description: s.description ?? "", uptime: { day: 1, week: 1 } })),
-	};
-}
+/** KV key holding the latest API-shaped snapshot, written by the cron each run. */
+const SNAPSHOT_KEY = "snapshot:v1";
+
+/**
+ * A snapshot older than this is flagged `stale` so the UI can warn instead of
+ * silently showing frozen data. Three cron cycles (cron runs every 5 min): a
+ * single missed run is tolerated, a stalled cron is surfaced.
+ */
+const STALE_MS = 3 * 5 * 60 * 1000;
 
 interface Snapshot {
 	updatedAt: number | null;
 	services: ApiService[];
+}
+
+/** Whether a snapshot is too old to trust, plus its age. A null `updatedAt` (cold start) is stale. */
+export function staleness(updatedAt: number | null, now = Date.now()): { stale: boolean; ageMs: number | null } {
+	if (updatedAt == null) return { stale: true, ageMs: null };
+	const ageMs = Math.max(0, now - updatedAt);
+	return { stale: ageMs > STALE_MS, ageMs };
+}
+
+/** A "warming" snapshot used before the first cron run has populated KV — every service unknown, no live fan-out. */
+function warmingSnapshot(): Snapshot {
+	return {
+		updatedAt: null,
+		services: SERVICES.map((svc) => ({
+			id: svc.id,
+			name: svc.name,
+			category: svc.category,
+			weight: svc.weight,
+			status: "unknown",
+			description: "Warming up — first check pending",
+			uptime: { day: 1, week: 1 },
+		})),
+	};
 }
 
 /** Reasons keyed by service id for services disabled due to an unreliable source. */
@@ -94,26 +119,61 @@ function decorateDisabled(services: ApiService[]): void {
 }
 
 /**
- * Load the current snapshot the way the public API exposes it: a fast D1 read,
- * with any service added to SERVICES but not yet persisted surfaced as
- * `unknown` (rather than invisible), falling back to a live fan-out before the
- * first cron run populates D1. `fromDb` lets callers decide what's cacheable.
+ * Load the current snapshot the way the public API exposes it: a fast KV read of
+ * the blob the cron writes each run (no D1 query, no recompute on the hot path).
+ * Any service added to SERVICES but not yet in the blob is surfaced as `unknown`
+ * rather than invisible; before the first cron run we serve a "warming" snapshot
+ * (never a live fan-out). `fromCache` lets callers decide what's cacheable.
  */
-async function loadSnapshot(env: Env): Promise<{ snapshot: Snapshot; fromDb: boolean }> {
-	const fromDb = await readSnapshot(env.DB);
-	if (fromDb) {
-		const dbIds = new Set(fromDb.services.map((s) => s.id));
-		for (const svc of SERVICES) {
-			if (!dbIds.has(svc.id)) {
-				fromDb.services.push({ id: svc.id, name: svc.name, category: svc.category, weight: svc.weight, status: "unknown", description: "Pending first check", uptime: { day: 1, week: 1 } });
-			}
+async function loadSnapshot(env: Env): Promise<{ snapshot: Snapshot; fromCache: boolean }> {
+	const cached = (await env.SNAPSHOT_KV.get(SNAPSHOT_KEY, "json")) as Snapshot | null;
+	const snapshot = cached ?? warmingSnapshot();
+
+	// Surface any service present in SERVICES but missing from the (possibly older)
+	// cached blob — e.g. one added since the last cron run.
+	const known = new Set(snapshot.services.map((s) => s.id));
+	for (const svc of SERVICES) {
+		if (!known.has(svc.id)) {
+			snapshot.services.push({ id: svc.id, name: svc.name, category: svc.category, weight: svc.weight, status: "unknown", description: "Pending first check", uptime: { day: 1, week: 1 } });
 		}
-		decorateDisabled(fromDb.services);
-		return { snapshot: fromDb, fromDb: true };
 	}
-	const live = liveSnapshot(await resolveAll());
-	decorateDisabled(live.services);
-	return { snapshot: live, fromDb: false };
+	// Stamp `disabled` (static config) at read time so it stays current even if the
+	// cached blob predates a service being disabled.
+	decorateDisabled(snapshot.services);
+	return { snapshot, fromCache: cached != null };
+}
+
+/**
+ * Resolve every service, persist to D1, and publish the finished snapshot to KV.
+ * Shared by the cron and the cold-start path. Returns the service count.
+ */
+async function refreshSnapshot(env: Env): Promise<number> {
+	const statuses = await resolveAll();
+	await persistSnapshot(env.DB, statuses);
+	const snapshot = await readSnapshot(env.DB);
+	if (snapshot) await env.SNAPSHOT_KV.put(SNAPSHOT_KEY, JSON.stringify(snapshot));
+	return statuses.length;
+}
+
+// Per-isolate guard: kick at most one cold-start populate at a time so a burst of
+// first requests doesn't fan out repeatedly while KV is still empty.
+let coldStartInFlight = false;
+
+/**
+ * When KV has no snapshot yet (before the first cron run), populate it once in the
+ * background so the page self-heals on the next poll — without blocking this request
+ * on an 80-service fan-out.
+ */
+function kickColdStart(env: Env, ctx: ExecutionContext): void {
+	if (coldStartInFlight) return;
+	coldStartInFlight = true;
+	ctx.waitUntil(
+		refreshSnapshot(env)
+			.catch((err) => console.error("isUpMap cold-start populate failed:", err))
+			.finally(() => {
+				coldStartInFlight = false;
+			}),
+	);
 }
 
 export interface StatusSummary {
@@ -212,26 +272,28 @@ export default {
 		}
 
 		if (url.pathname === "/api/status") {
-			// Cache per-colo so the (potentially expensive) snapshot — especially
-			// the cold-start live fan-out — is computed at most once per TTL.
+			// Cache per-colo so the KV read is done at most once per TTL.
 			const cache = caches.default;
 			const cacheKey = new Request(new URL("/api/status", url.origin).toString(), { method: "GET" });
 			const hit = await cache.match(cacheKey);
 			if (hit) return hit;
 
-			// Only the expensive miss path (D1 read + cold-start live fan-out) is
-			// rate-limited; cache hits above are served cheaply to everyone, so a
-			// flood of repeats collapses onto the cached response instead of 429s.
+			// Only the miss path (KV read) is rate-limited; cache hits above are
+			// served cheaply to everyone, so a flood of repeats collapses onto the
+			// cached response instead of 429s.
 			const limited = await rateLimit(request, env);
 			if (limited) return limited;
 
-			const { snapshot, fromDb } = await loadSnapshot(env);
-			const resp = json(snapshot);
-			// Cache D1-backed responses, but skip a degenerate cold-start fallback
-			// (everything `unknown`, e.g. a cold fan-out that timed out) so the next
-			// request retries instead of serving the bad snapshot for the full TTL.
-			const cacheable = fromDb || snapshot.services.some((s) => s.status !== "unknown");
-			if (cacheable) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			const { snapshot, fromCache } = await loadSnapshot(env);
+			const resp = json({ ...snapshot, ...staleness(snapshot.updatedAt) });
+			if (fromCache) {
+				// Cache real (KV-backed) snapshots only.
+				ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			} else {
+				// KV empty (before the first cron run): populate it in the background so
+				// the next poll shows real data instead of the "warming" placeholder.
+				kickColdStart(env, ctx);
+			}
 			return resp;
 		}
 
@@ -239,8 +301,7 @@ export default {
 			// Overall-status rollup for compact embeds (favicon/title, badges,
 			// "All systems operational" banners). `?format=shields` returns a
 			// shields.io endpoint badge (powers the README badge); the default is
-			// the full JSON rollup. Same D1-read/live-fallback and per-colo caching
-			// as /api/status.
+			// the full JSON rollup. Same KV-read + per-colo caching as /api/status.
 			const shields = url.searchParams.get("format") === "shields";
 			const cache = caches.default;
 			// Keep the format in the cache key so the JSON and badge variants don't collide.
@@ -251,11 +312,11 @@ export default {
 			const limited = await rateLimit(request, env);
 			if (limited) return limited;
 
-			const { snapshot, fromDb } = await loadSnapshot(env);
+			const { snapshot, fromCache } = await loadSnapshot(env);
 			const summary = summarize(snapshot);
-			const resp = json(shields ? shieldsBadge(summary) : summary);
-			const cacheable = fromDb || snapshot.services.some((s) => s.status !== "unknown");
-			if (cacheable) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			const resp = json(shields ? shieldsBadge(summary) : { ...summary, ...staleness(snapshot.updatedAt) });
+			if (fromCache) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			else kickColdStart(env, ctx);
 			return resp;
 		}
 
@@ -312,17 +373,17 @@ export default {
 
 	async scheduled(controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
 		try {
-			const statuses = await resolveAll();
-			await persistSnapshot(env.DB, statuses);
+			// Resolve every service, persist to D1, and publish the snapshot to KV.
+			const count = await refreshSnapshot(env);
 
 			// Retention sweep once a day (~03:00 UTC): with a 5-minute cron, only the
 			// :00 firing of hour 3 falls in this window, so it runs exactly once.
 			const when = new Date(controller.scheduledTime);
 			if (when.getUTCHours() === 3 && when.getUTCMinutes() < 5) {
 				const pruned = await pruneIncidents(env.DB);
-				console.log(`isUpMap cron: persisted ${statuses.length} services; pruned ${pruned} old incidents`);
+				console.log(`isUpMap cron: persisted ${count} services; pruned ${pruned} old incidents`);
 			} else {
-				console.log(`isUpMap cron: persisted ${statuses.length} services`);
+				console.log(`isUpMap cron: persisted ${count} services`);
 			}
 		} catch (err) {
 			console.error("isUpMap cron failed:", err instanceof Error ? err.stack || err.message : String(err));

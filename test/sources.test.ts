@@ -271,9 +271,9 @@ describe("http", () => {
 		expect((await resolve()).status).toBe("up");
 	});
 
-	it("is degraded on a 5xx", async () => {
+	it("is down on a persistent 5xx (server error)", async () => {
 		fetchSpy.mockResolvedValue(reply("boom", 500));
-		expect((await resolve()).status).toBe("degraded");
+		expect((await resolve()).status).toBe("down");
 	});
 
 	it("is up on a 403/429 bot wall (host responded, just refused the probe)", async () => {
@@ -286,6 +286,29 @@ describe("http", () => {
 	it("is degraded on a 404", async () => {
 		fetchSpy.mockResolvedValue(reply("missing", 404));
 		expect((await resolve()).status).toBe("degraded");
+	});
+});
+
+describe("transient retry", () => {
+	const url = "https://example.com/health";
+	const resolveHttp = () => resolveStatus(svc({ type: "http", url }));
+
+	it("retries once after a 5xx and uses the recovered response", async () => {
+		fetchSpy.mockResolvedValueOnce(reply("boom", 503)).mockResolvedValueOnce(reply("ok", 200));
+		expect((await resolveHttp()).status).toBe("up");
+		expect(fetchSpy).toHaveBeenCalledTimes(2);
+	});
+
+	it("retries once after a thrown network error and recovers", async () => {
+		fetchSpy.mockRejectedValueOnce(new Error("connection reset")).mockResolvedValueOnce(reply("ok", 200));
+		expect((await resolveHttp()).status).toBe("up");
+		expect(fetchSpy).toHaveBeenCalledTimes(2);
+	});
+
+	it("gives up after one retry (does not loop)", async () => {
+		fetchSpy.mockRejectedValue(new Error("down"));
+		expect((await resolveHttp()).status).toBe("unknown");
+		expect(fetchSpy).toHaveBeenCalledTimes(2);
 	});
 });
 

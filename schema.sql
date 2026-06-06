@@ -37,3 +37,13 @@ CREATE TABLE IF NOT EXISTS meta (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+
+-- Flap-dampening state: tracks the raw status observed each poll and how many
+-- consecutive polls it has held. A non-up status must persist for CONFIRM_THRESHOLD
+-- polls before it is "confirmed" into `current.status` / opens an incident, so a
+-- single glitchy upstream reading can't create a false outage. See src/db.ts.
+CREATE TABLE IF NOT EXISTS probe_state (
+	service_id      TEXT PRIMARY KEY,
+	observed_status TEXT NOT NULL,   -- raw status from the latest poll
+	streak          INTEGER NOT NULL -- consecutive polls at observed_status
+);

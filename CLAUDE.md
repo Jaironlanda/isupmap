@@ -4,7 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Freshly scaffolded Cloudflare Worker (`create-cloudflare` CLI). Currently a **static-assets-only Worker** — no Worker script exists yet. The only served content is [public/index.html](public/index.html), mapped to `/` via the `assets` binding in [wrangler.jsonc](wrangler.jsonc). There is no `src/` directory and no `main` entry in the config; adding server-side logic means creating a Worker entrypoint (e.g. `src/index.ts`) and pointing `main` at it.
+isUpMap — a service-status heatmap Worker for 80+ services. Architecture:
+
+- **Cron** (`scheduled`, every 5 min in [wrangler.jsonc](wrangler.jsonc)) resolves every service in [src/services.ts](src/services.ts) via [src/sources.ts](src/sources.ts) (Statuspage JSON / RSS-Atom / HTTP ping, each with one transient-failure retry), persists a snapshot + incident transitions to **D1** ([src/db.ts](src/db.ts)), and publishes the finished API snapshot to **KV** (`SNAPSHOT_KEY` in [src/index.ts](src/index.ts)).
+- **Detection is flap-dampened**: a non-up status must hold for `CONFIRM_THRESHOLD` (2) consecutive polls before it is committed / opens an incident; `up` and `unknown` never delay (`confirmStatus` + `probe_state` table). This prevents a single glitchy upstream read from creating a false outage.
+- **Read path** (`GET /api/status`, `/api/summary`, `/api/incidents`, `/status/:id`) reads the KV snapshot — never D1 on the hot path — fronted by the per-colo Cache API and a per-IP rate limit. Responses carry a `stale`/`ageMs` flag (older than 3 cron cycles) so the UI warns instead of showing frozen data.
+- **Frontend** ([public/](public/)) is a vanilla-JS treemap that polls `/api/status` every 45s.
+
+Bindings ([wrangler.jsonc](wrangler.jsonc)): `ASSETS` (static), `DB` (D1), `SNAPSHOT_KV` (KV snapshot cache), `API_RATE_LIMITER` (rate limit). `main` is [src/index.ts](src/index.ts).
 
 ## Commands
 
@@ -33,3 +40,5 @@ Per [AGENTS.md](AGENTS.md): your knowledge of Workers APIs and limits may be out
 - Config is `wrangler.jsonc` (JSONC, comments allowed). `.vscode/settings.json` associates `wrangler.json` with the JSONC language.
 - `compatibility_flags` includes `nodejs_compat`; observability and source-map upload are enabled.
 - `compatibility_date` is pinned in [wrangler.jsonc](wrangler.jsonc) — bump deliberately, not casually.
+- Schema changes go in [schema.sql](schema.sql) (additive `CREATE TABLE IF NOT EXISTS` so re-running is safe) and are applied with `npm run db:schema:local` / `db:schema:remote`.
+- The `SNAPSHOT_KV` binding needs a namespace id: `npx wrangler kv namespace create SNAPSHOT_KV` (local dev and tests simulate KV regardless of the id).

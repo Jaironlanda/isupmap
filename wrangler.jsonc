@@ -47,6 +47,17 @@
 			"database_id": ""
 		}
 	],
+	// Hot read-cache for the public snapshot: the cron writes the finished
+	// snapshot JSON here each run and the /api/* routes read it, so reads never
+	// touch D1. Replace the placeholder id below with your own — run
+	// `npx wrangler kv namespace create SNAPSHOT_KV` and paste the id. Local dev
+	// and tests simulate KV regardless of the id value.
+	"kv_namespaces": [
+		{
+			"binding": "SNAPSHOT_KV",
+			"id": "00000000000000000000000000000000"
+		}
+	],
 	// Per-IP rate limiting for the public /api/* endpoints: 60 requests / 60s.
 	"ratelimits": [
 		{
