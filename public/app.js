@@ -1196,6 +1196,11 @@ async function openDetail(svc) {
 	detailEl.hidden = false;
 	setUrlParam("service", svc.id);
 	renderDetailHeader(svc);
+	// Mount the report widget if the module has loaded.
+	const widgetEl = detailBody.querySelector("[data-report-widget]");
+	if (widgetEl && window.isupReport) {
+		window.isupReport.mount(widgetEl, svc.id, { status: svc.status });
+	}
 	// Incident history for this service (client-side filter of the recent log).
 	detailBody.querySelector(".detail__incidents").innerHTML = `<p class="panel__empty">Loading history…</p>`;
 	try {
@@ -1244,6 +1249,7 @@ function renderDetailHeader(svc) {
 			<button id="detailCopy" class="detail__copy-btn" type="button"><i data-lucide="link-2"></i> <span id="detailCopyLabel">Copy link</span></button>
 		</div>
 		${host ? `<p class="detail__host">${escapeHtml(host)}</p>` : ""}
+		<div data-report-widget data-service-id="${escapeHtml(svc.id)}"></div>
 		<div class="detail__section-head">
 			<h3 class="detail__subhead">Incident history</h3>
 		</div>

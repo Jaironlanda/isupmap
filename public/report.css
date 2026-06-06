@@ -1,0 +1,158 @@
+/* Community report widget — classes only, no inline/injected <style> */
+
+.report-widget {
+  margin: 24px 0;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 12px;
+  padding: 18px 20px;
+  background: rgba(255, 255, 255, .03);
+}
+
+.report-widget__head {
+  font-size: 14px;
+  font-weight: 600;
+  color: #c9d1d9;
+  margin: 0 0 14px;
+}
+
+.report-widget__prompt {
+  font-size: 13px;
+  color: #8b949e;
+  margin: 0 0 12px;
+}
+
+/* Reason picker */
+.report-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.report-reason-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: rgba(255, 255, 255, .04);
+  color: #c9d1d9;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+
+.report-reason-btn:hover {
+  background: rgba(255, 255, 255, .08);
+  border-color: rgba(255, 255, 255, .22);
+}
+
+.report-reason-btn:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 2px;
+}
+
+.report-reason-btn[aria-pressed="true"],
+.report-reason-btn.is-selected {
+  background: rgba(88, 166, 255, .12);
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+/* Thanks state */
+.report-widget__thanks {
+  font-size: 13px;
+  color: #3fb950;
+}
+
+/* Count / breakdown */
+.report-widget__count {
+  font-size: 13px;
+  color: #8b949e;
+  margin: 0 0 10px;
+}
+
+.report-widget__count strong {
+  color: #e6edf3;
+}
+
+/* Per-reason bars */
+.report-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+
+.report-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.report-bar__label {
+  width: 100px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.report-bar__track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, .06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.report-bar__fill {
+  height: 100%;
+  background: #58a6ff;
+  border-radius: 999px;
+  transition: width .3s;
+}
+
+.report-bar__num {
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Per-country ranked list */
+.report-countries {
+  margin: 14px 0 0;
+  font-size: 13px;
+}
+
+.report-countries__head {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #8b949e;
+  margin: 0 0 6px;
+}
+
+.report-country {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  color: #c9d1d9;
+}
+
+.report-country__flag {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.report-country__name {
+  flex: 1;
+}
+
+.report-country__count {
+  color: #8b949e;
+}

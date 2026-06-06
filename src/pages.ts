@@ -68,8 +68,20 @@ function formatUpdated(updatedAt: number | null): string {
 	return new Date(updatedAt).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
 }
 
-/** Shared <head> + page chrome so every SSR page looks and behaves the same. */
-function layout(opts: { title: string; description: string; canonical: string; jsonLd: unknown; body: string }): string {
+/**
+ * Shared <head> + page chrome so every SSR page looks and behaves the same.
+ * `extraHead` injects additional <link>/<meta> tags (e.g. for report.css).
+ * `scripts` injects <script> tags at the end of <body> (e.g. for report.js).
+ */
+function layout(opts: {
+	title: string;
+	description: string;
+	canonical: string;
+	jsonLd: unknown;
+	body: string;
+	extraHead?: string;
+	scripts?: string;
+}): string {
 	return `<!doctype html>
 <html lang="en">
 <head>
@@ -117,6 +129,7 @@ h1 { font-size: clamp(24px, 5vw, 34px); line-height: 1.2; margin: 8px 0 16px; }
 .cats li { display: flex; align-items: center; gap: 8px; }
 footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.08); font-size: 13px; color: #8b949e; }
 </style>
+${opts.extraHead ?? ""}
 </head>
 <body>
 <div class="wrap">
@@ -127,6 +140,7 @@ isUpMap checks ${SERVICES.length}+ services every few minutes. Status reflects t
 &middot; <a href="/">Live status map</a> &middot; <a href="/status">All services</a>
 </footer>
 </div>
+${opts.scripts ?? ""}
 </body>
 </html>`;
 }
@@ -179,9 +193,18 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 <p class="meta">${escapeHtml(copy.sentence(name))} Category: ${escapeHtml(service.category)}. Last checked ${formatUpdated(updatedAt)}.</p>
 ${stats}
 ${note}
+<div data-report-widget data-service-id="${escapeHtml(service.id)}"></div>
 <p><a href="/">← Back to the live status map</a></p>`;
 
-	return layout({ title, description, canonical, jsonLd, body });
+	return layout({
+		title,
+		description,
+		canonical,
+		jsonLd,
+		body,
+		extraHead: `<link rel="stylesheet" href="/report.css" />`,
+		scripts: `<script src="/report.js" type="module"></script>`,
+	});
 }
 
 /** Directory of every tracked service, grouped by category, for crawl discovery. */

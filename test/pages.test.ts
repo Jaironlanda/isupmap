@@ -9,13 +9,24 @@ function apiService(id: string, status: StatusLevel, over: Partial<ApiService> =
 const svc: Service = SERVICES[0];
 
 describe("renderServicePage", () => {
-	it("renders an indexable, JS-free page with canonical + status copy", () => {
+	it("renders an indexable page with canonical + status copy", () => {
 		const html = renderServicePage(svc, apiService(svc.id, "down", { description: "Major outage" }), 1_700_000_000_000);
 		expect(html).toContain(`<link rel="canonical" href="https://isupmap.com/status/${svc.id}" />`);
 		expect(html).toContain(`Is ${svc.name} down?`);
 		expect(html).toContain("Major outage"); // incident note surfaced
 		expect(html).toContain("Down"); // status label
-		expect(html).not.toContain("<script src"); // no client JS
+	});
+
+	it("includes the report widget container", () => {
+		const html = renderServicePage(svc, apiService(svc.id, "up"), 1000);
+		expect(html).toContain(`data-report-widget`);
+		expect(html).toContain(`data-service-id="${svc.id}"`);
+	});
+
+	it("links report.css and report.js", () => {
+		const html = renderServicePage(svc, apiService(svc.id, "up"), 1000);
+		expect(html).toContain(`<link rel="stylesheet" href="/report.css" />`);
+		expect(html).toContain(`<script src="/report.js" type="module">`);
 	});
 
 	it("shows uptime stats only when status is known", () => {

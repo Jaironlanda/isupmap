@@ -13,6 +13,17 @@
 
 import { persistSnapshot, pruneIncidents, readSnapshot, recentIncidents, type ApiService } from "./db";
 import { findService, renderNotFound, renderServicePage, renderSitemap, renderStatusIndex } from "./pages";
+import {
+	aggregateReports,
+	countryOf,
+	hashIp,
+	insertReports,
+	normalizeReason,
+	pruneReports,
+	readCount,
+	writeCount,
+	type VoteMessage,
+} from "./reports";
 import { SERVICES, type ServiceStatus, type StatusLevel } from "./services";
 import { resolveStatus } from "./sources";
 
@@ -34,10 +45,12 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 
 /**
  * Worker-rendered markup (SSR status pages, sitemap). These responses bypass the
- * static-asset `_headers` file, so set security headers here. The pages ship no
- * scripts (`script-src 'none'`) and only inline CSS (`style-src 'unsafe-inline'`).
+ * static-asset `_headers` file, so set security headers here. Most pages ship no
+ * scripts (`script-src 'none'`); pass `allowSelfScripts: true` only for the
+ * service detail page that loads the report widget via `script-src 'self'`.
  */
-function markup(body: string, contentType: string, init: ResponseInit = {}): Response {
+function markup(body: string, contentType: string, init: ResponseInit = {}, opts: { allowSelfScripts?: boolean } = {}): Response {
+	const scriptSrc = opts.allowSelfScripts ? "'self'" : "'none'";
 	return new Response(body, {
 		...init,
 		headers: {
@@ -46,7 +59,7 @@ function markup(body: string, contentType: string, init: ResponseInit = {}): Res
 			"x-content-type-options": "nosniff",
 			"referrer-policy": "no-referrer",
 			"content-security-policy":
-				"default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; frame-ancestors 'none'",
+				`default-src 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; frame-ancestors 'none'`,
 			...(init.headers ?? {}),
 		},
 	});
@@ -337,6 +350,45 @@ export default {
 			return resp;
 		}
 
+		// Community report routes (/api/report/:id).
+		const reportMatch = url.pathname.match(/^\/api\/report\/([a-z0-9-]+)\/?$/);
+		if (reportMatch) {
+			const service = findService(reportMatch[1]);
+			if (!service) return json({ error: "Not found" }, { status: 404 });
+
+			if (request.method === "POST") {
+				// Tighter rate limit for the vote path to cap queue flooding.
+				const ip = request.headers.get("cf-connecting-ip") ?? "anon";
+				const { success } = await env.VOTE_RATE_LIMITER.limit({ key: ip });
+				if (!success) return json({ error: "Rate limit exceeded" }, { status: 429, headers: { "retry-after": "60", "cache-control": "no-store" } });
+
+				let body: Record<string, unknown> = {};
+				try {
+					body = (await request.json()) as Record<string, unknown>;
+				} catch {
+					/* missing/invalid body → default reason */
+				}
+				const reason = normalizeReason(body.reason);
+				const country = countryOf(request);
+				const salt = env.VOTE_SALT ?? "";
+				const ipHash = await hashIp(ip, salt);
+				const msg: VoteMessage = { serviceId: service.id, country, ipHash, reason, ts: Date.now() };
+				await env.VOTE_QUEUE.send(msg);
+
+				// Return the current (possibly stale) count so the UI can show it immediately.
+				const current = (await readCount(env.SNAPSHOT_KV, service.id)) ?? { windowMs: 0, total: 0, countries: [], reasons: [] };
+				return json({ ok: true, report: current }, { status: 202, headers: { "cache-control": "no-store" } });
+			}
+
+			// GET: read-through KV → D1.
+			const cached = await readCount(env.SNAPSHOT_KV, service.id);
+			if (cached) return json(cached, { headers: { "cache-control": "no-store" } });
+
+			const report = await aggregateReports(env.REPORTS_DB, service.id);
+			await writeCount(env.SNAPSHOT_KV, service.id, report);
+			return json(report, { headers: { "cache-control": "no-store" } });
+		}
+
 		// Crawlable sitemap, generated from SERVICES so it never drifts.
 		if (url.pathname === "/sitemap.xml") {
 			return markup(renderSitemap(), "application/xml; charset=utf-8", { headers: { "cache-control": "public, max-age=3600" } });
@@ -363,7 +415,8 @@ export default {
 
 			const { snapshot } = await loadSnapshot(env);
 			const current = snapshot.services.find((s) => s.id === service.id) ?? null;
-			const resp = markup(renderServicePage(service, current, snapshot.updatedAt), "text/html; charset=utf-8");
+			// Allow script-src 'self' only for the service page, which loads report.js.
+			const resp = markup(renderServicePage(service, current, snapshot.updatedAt), "text/html; charset=utf-8", {}, { allowSelfScripts: true });
 			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;
 		}
@@ -380,14 +433,33 @@ export default {
 			// :00 firing of hour 3 falls in this window, so it runs exactly once.
 			const when = new Date(controller.scheduledTime);
 			if (when.getUTCHours() === 3 && when.getUTCMinutes() < 5) {
-				const pruned = await pruneIncidents(env.DB);
-				console.log(`isUpMap cron: persisted ${count} services; pruned ${pruned} old incidents`);
+				const [pruned, prunedReports] = await Promise.all([pruneIncidents(env.DB), pruneReports(env.REPORTS_DB)]);
+				console.log(`isUpMap cron: persisted ${count} services; pruned ${pruned} old incidents, ${prunedReports} old reports`);
 			} else {
 				console.log(`isUpMap cron: persisted ${count} services`);
 			}
 		} catch (err) {
 			console.error("isUpMap cron failed:", err instanceof Error ? err.stack || err.message : String(err));
 			throw err;
+		}
+	},
+
+	async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
+		const rows = (batch.messages as Message<VoteMessage>[]).map((m) => m.body);
+		try {
+			await insertReports(env.REPORTS_DB, rows);
+			// Refresh the KV count for every service touched in this batch so reads
+			// reflect the newly-flushed votes quickly (within the KV TTL).
+			const touched = [...new Set(rows.map((r) => r.serviceId))];
+			await Promise.all(
+				touched.map(async (serviceId) => {
+					const report = await aggregateReports(env.REPORTS_DB, serviceId);
+					await writeCount(env.SNAPSHOT_KV, serviceId, report);
+				}),
+			);
+		} catch (err) {
+			console.error("isUpMap queue consumer failed:", err instanceof Error ? err.stack || err.message : String(err));
+			batch.retryAll();
 		}
 	},
 } satisfies ExportedHandler<Env>;
