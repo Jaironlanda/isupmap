@@ -129,6 +129,26 @@ export interface StatusSummary {
 	updatedAt: number | null;
 }
 
+/** Shields.io `endpoint` badge schema (https://shields.io/badges/endpoint-badge). */
+export interface ShieldsBadge {
+	schemaVersion: 1;
+	label: string;
+	message: string;
+	color: string;
+}
+
+/** Shields badge colors per overall status (named colors shields understands). */
+const SHIELDS_COLOR: Record<StatusLevel, string> = { up: "brightgreen", degraded: "yellow", down: "red", unknown: "lightgrey" };
+
+/**
+ * Render a {@link StatusSummary} as a shields.io endpoint badge, so the README
+ * (and any other embed) can show a live, status-colored badge served straight
+ * from `/api/summary?format=shields` — giving the rollup a real consumer.
+ */
+export function shieldsBadge(summary: StatusSummary): ShieldsBadge {
+	return { schemaVersion: 1, label: "isUpMap", message: summary.message, color: SHIELDS_COLOR[summary.status] };
+}
+
 /** Roll a snapshot up into a single overall status + headline. */
 export function summarize(snapshot: Snapshot): StatusSummary {
 	const counts: Record<StatusLevel, number> = { up: 0, degraded: 0, down: 0, unknown: 0 };
@@ -217,10 +237,14 @@ export default {
 
 		if (url.pathname === "/api/summary") {
 			// Overall-status rollup for compact embeds (favicon/title, badges,
-			// "All systems operational" banners). Same D1-read/live-fallback and
-			// per-colo caching as /api/status.
+			// "All systems operational" banners). `?format=shields` returns a
+			// shields.io endpoint badge (powers the README badge); the default is
+			// the full JSON rollup. Same D1-read/live-fallback and per-colo caching
+			// as /api/status.
+			const shields = url.searchParams.get("format") === "shields";
 			const cache = caches.default;
-			const cacheKey = new Request(new URL("/api/summary", url.origin).toString(), { method: "GET" });
+			// Keep the format in the cache key so the JSON and badge variants don't collide.
+			const cacheKey = new Request(new URL(`/api/summary${shields ? "?format=shields" : ""}`, url.origin).toString(), { method: "GET" });
 			const hit = await cache.match(cacheKey);
 			if (hit) return hit;
 
@@ -228,7 +252,8 @@ export default {
 			if (limited) return limited;
 
 			const { snapshot, fromDb } = await loadSnapshot(env);
-			const resp = json(summarize(snapshot));
+			const summary = summarize(snapshot);
+			const resp = json(shields ? shieldsBadge(summary) : summary);
 			const cacheable = fromDb || snapshot.services.some((s) => s.status !== "unknown");
 			if (cacheable) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;

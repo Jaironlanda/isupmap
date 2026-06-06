@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarize } from "../src/index";
+import { shieldsBadge, summarize } from "../src/index";
 import type { ApiService } from "../src/db";
 import type { StatusLevel } from "../src/services";
 
@@ -51,5 +51,18 @@ describe("summarize", () => {
 	it("passes through updatedAt", () => {
 		expect(summarize(snapshot(["up"], 42)).updatedAt).toBe(42);
 		expect(summarize(snapshot(["up"], null)).updatedAt).toBeNull();
+	});
+});
+
+describe("shieldsBadge", () => {
+	it("emits the shields endpoint schema with the rollup headline", () => {
+		const badge = shieldsBadge(summarize(snapshot(["up", "up"])));
+		expect(badge).toEqual({ schemaVersion: 1, label: "isUpMap", message: "All systems operational", color: "brightgreen" });
+	});
+
+	it("colors the badge by overall status", () => {
+		expect(shieldsBadge(summarize(snapshot(["up", "degraded"]))).color).toBe("yellow");
+		expect(shieldsBadge(summarize(snapshot(["up", "down"]))).color).toBe("red");
+		expect(shieldsBadge(summarize(snapshot(["unknown"]))).color).toBe("lightgrey");
 	});
 });
