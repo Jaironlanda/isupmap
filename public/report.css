@@ -1,44 +1,144 @@
-/* Community report widget — classes only, no inline/injected <style> */
+/* ---- Full-page two-column layout (/status/:id) ---- */
+
+.sp-wrap {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Left column: MapLibre GL world map */
+.sp-map {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: #0d1117;
+}
+
+/* Placeholder shown when PROTOMAPS_KEY is not configured */
+.sp-map-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: #8b949e;
+  gap: 8px;
+  padding: 24px;
+}
+
+.sp-map-placeholder p { margin: 0; }
+.sp-map-hint { font-size: 13px; line-height: 1.5; }
+
+/* Right column: scrollable info + vote panel */
+.sp-panel {
+  width: 360px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #0f1117;
+  border-left: 1px solid rgba(255, 255, 255, .08);
+}
+
+.sp-inner {
+  padding: 24px 20px 56px;
+}
+
+/* Responsive: stack vertically on narrow screens */
+@media (max-width: 700px) {
+  .sp-wrap {
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .sp-map {
+    flex: none;
+    height: 55vw;
+    min-height: 220px;
+    max-height: 380px;
+  }
+
+  .sp-panel {
+    width: auto;
+    overflow: visible;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, .08);
+  }
+}
+
+/* ---- MapLibre GL overrides ---- */
+
+/* Keep attribution compact in the dark theme */
+.maplibregl-ctrl-attrib {
+  background: rgba(15, 17, 23, 0.75) !important;
+  color: #8b949e !important;
+  font-size: 10px !important;
+}
+
+.maplibregl-ctrl-attrib a { color: #58a6ff !important; }
+
+/* Report popup style */
+.report-popup .maplibregl-popup-content {
+  background: rgba(22, 27, 34, 0.96);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 8px;
+  color: #e6edf3;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 8px 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, .5);
+}
+
+.report-popup .maplibregl-popup-tip {
+  border-top-color: rgba(22, 27, 34, 0.96) !important;
+  border-bottom-color: rgba(22, 27, 34, 0.96) !important;
+}
+
+/* ---- Community report widget ---- */
 
 .report-widget {
-  margin: 24px 0;
+  margin: 20px 0;
   border: 1px solid rgba(255, 255, 255, .08);
   border-radius: 12px;
-  padding: 18px 20px;
+  padding: 16px 18px;
   background: rgba(255, 255, 255, .03);
 }
 
 .report-widget__head {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #c9d1d9;
-  margin: 0 0 14px;
+  margin: 0 0 12px;
 }
 
 .report-widget__prompt {
   font-size: 13px;
   color: #8b949e;
-  margin: 0 0 12px;
+  margin: 0 0 10px;
 }
 
 /* Reason picker */
 .report-reasons {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 16px;
+  gap: 6px;
+  margin: 0 0 14px;
 }
 
 .report-reason-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, .14);
   background: rgba(255, 255, 255, .04);
   color: #c9d1d9;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   transition: background .12s, border-color .12s;
 }
@@ -53,48 +153,40 @@
   outline-offset: 2px;
 }
 
-.report-reason-btn[aria-pressed="true"],
-.report-reason-btn.is-selected {
-  background: rgba(88, 166, 255, .12);
-  border-color: #58a6ff;
-  color: #58a6ff;
-}
-
-/* Thanks state */
+/* Thanks / voted state */
 .report-widget__thanks {
   font-size: 13px;
   color: #3fb950;
-}
-
-/* Count / breakdown */
-.report-widget__count {
-  font-size: 13px;
-  color: #8b949e;
   margin: 0 0 10px;
 }
 
-.report-widget__count strong {
-  color: #e6edf3;
+/* Count */
+.report-widget__count {
+  font-size: 13px;
+  color: #8b949e;
+  margin: 0 0 8px;
 }
+
+.report-widget__count strong { color: #e6edf3; }
 
 /* Per-reason bars */
 .report-bars {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 12px 0 0;
+  gap: 5px;
+  margin: 10px 0 0;
 }
 
 .report-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11px;
   color: #8b949e;
 }
 
 .report-bar__label {
-  width: 100px;
+  width: 88px;
   flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -103,7 +195,7 @@
 
 .report-bar__track {
   flex: 1;
-  height: 6px;
+  height: 5px;
   background: rgba(255, 255, 255, .06);
   border-radius: 999px;
   overflow: hidden;
@@ -117,42 +209,33 @@
 }
 
 .report-bar__num {
-  width: 28px;
+  width: 24px;
   text-align: right;
   flex-shrink: 0;
 }
 
 /* Per-country ranked list */
 .report-countries {
-  margin: 14px 0 0;
-  font-size: 13px;
+  margin: 12px 0 0;
+  font-size: 12px;
 }
 
 .report-countries__head {
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .04em;
   color: #8b949e;
-  margin: 0 0 6px;
+  margin: 0 0 5px;
 }
 
 .report-country {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 0;
+  gap: 5px;
+  padding: 2px 0;
   color: #c9d1d9;
 }
 
-.report-country__flag {
-  font-size: 16px;
-  line-height: 1;
-}
-
-.report-country__name {
-  flex: 1;
-}
-
-.report-country__count {
-  color: #8b949e;
-}
+.report-country__flag { font-size: 14px; line-height: 1; }
+.report-country__name { flex: 1; }
+.report-country__count { color: #8b949e; }

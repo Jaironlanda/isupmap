@@ -81,7 +81,20 @@ function layout(opts: {
 	body: string;
 	extraHead?: string;
 	scripts?: string;
+	/** When true, skips the .wrap div so the body owns the full viewport. */
+	noWrap?: boolean;
 }): string {
+	const bodyContent = opts.noWrap
+		? opts.body
+		: `<div class="wrap">
+<a class="brand" href="/"><img src="/images/logo/isupmap.png" alt="" width="24" height="24" />isUpMap</a>
+${opts.body}
+<footer>
+isUpMap checks ${SERVICES.length}+ services every few minutes. Status reflects the latest automated probe and may lag the provider's own status page.
+&middot; <a href="/">Live status map</a> &middot; <a href="/status">All services</a>
+</footer>
+</div>`;
+
 	return `<!doctype html>
 <html lang="en">
 <head>
@@ -114,39 +127,37 @@ a:hover { text-decoration: underline; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: #e6edf3; }
 .brand img { width: 24px; height: 24px; }
 .crumbs { margin: 24px 0 8px; font-size: 13px; color: #8b949e; }
-h1 { font-size: clamp(24px, 5vw, 34px); line-height: 1.2; margin: 8px 0 16px; }
+h1 { font-size: clamp(22px, 4vw, 30px); line-height: 1.2; margin: 8px 0 12px; }
 .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 14px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); }
 .dot { width: 10px; height: 10px; border-radius: 50%; }
-.meta { color: #8b949e; font-size: 14px; margin: 8px 0 24px; }
-.note { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 16px 18px; margin: 20px 0; }
-.stats { display: flex; flex-wrap: wrap; gap: 16px; margin: 24px 0; }
-.stat { flex: 1 1 160px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 16px 18px; }
-.stat .k { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; }
-.stat .v { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.meta { color: #8b949e; font-size: 14px; margin: 8px 0 20px; }
+.note { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+.stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.stat { flex: 1 1 120px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 14px 16px; }
+.stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; }
+.stat .v { font-size: 20px; font-weight: 700; margin-top: 4px; }
 .cats { margin: 24px 0; }
 .cats h2 { font-size: 16px; margin: 24px 0 8px; color: #c9d1d9; }
 .cats ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 16px; }
 .cats li { display: flex; align-items: center; gap: 8px; }
-footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.08); font-size: 13px; color: #8b949e; }
+footer { margin-top: 32px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.08); font-size: 12px; color: #8b949e; }
 </style>
 ${opts.extraHead ?? ""}
 </head>
 <body>
-<div class="wrap">
-<a class="brand" href="/"><img src="/images/logo/isupmap.png" alt="" width="24" height="24" />isUpMap</a>
-${opts.body}
-<footer>
-isUpMap checks ${SERVICES.length}+ services every few minutes. Status reflects the latest automated probe and may lag the provider's own status page.
-&middot; <a href="/">Live status map</a> &middot; <a href="/status">All services</a>
-</footer>
-</div>
+${bodyContent}
 ${opts.scripts ?? ""}
 </body>
 </html>`;
 }
 
-/** Full HTML for a single service's status page. `current` is null if unseen. */
-export function renderServicePage(service: Service, current: ApiService | null, updatedAt: number | null): string {
+/**
+ * Full HTML for a single service's status page.
+ * Uses a full-viewport two-column layout: Protomaps world map on the left,
+ * service info + community reports panel on the right.
+ * `mapKey` is the Protomaps API key (empty string disables the GL map).
+ */
+export function renderServicePage(service: Service, current: ApiService | null, updatedAt: number | null, mapKey = ""): string {
 	const status: StatusLevel = current?.status ?? "unknown";
 	const copy = STATUS_COPY[status];
 	const color = STATUS_COLOR[status];
@@ -186,15 +197,30 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 		],
 	};
 
+	// Two-column full-viewport body: map div (left) + scrollable info panel (right).
 	const body = `
-<nav class="crumbs"><a href="/">Home</a> / <a href="/status">Status</a> / ${escapeHtml(name)}</nav>
-<h1>Is ${escapeHtml(name)} down?</h1>
-<span class="badge"><span class="dot" style="background:${color}"></span>${copy.label}</span>
-<p class="meta">${escapeHtml(copy.sentence(name))} Category: ${escapeHtml(service.category)}. Last checked ${formatUpdated(updatedAt)}.</p>
-${stats}
-${note}
-<div data-report-widget data-service-id="${escapeHtml(service.id)}"></div>
-<p><a href="/">← Back to the live status map</a></p>`;
+<div class="sp-wrap">
+  <div class="sp-map" id="sp-map"
+    data-service-id="${escapeHtml(service.id)}"
+    data-map-key="${escapeHtml(mapKey)}"></div>
+  <aside class="sp-panel">
+    <div class="sp-inner">
+      <a class="brand" href="/"><img src="/images/logo/isupmap.png" alt="" width="24" height="24" />isUpMap</a>
+      <nav class="crumbs"><a href="/">Home</a> / <a href="/status">Status</a> / ${escapeHtml(name)}</nav>
+      <h1>Is ${escapeHtml(name)} down?</h1>
+      <span class="badge"><span class="dot" style="background:${color}"></span>${copy.label}</span>
+      <p class="meta">${escapeHtml(copy.sentence(name))} Category: ${escapeHtml(service.category)}. Last checked ${formatUpdated(updatedAt)}.</p>
+      ${stats}
+      ${note}
+      <div data-report-widget data-service-id="${escapeHtml(service.id)}"></div>
+      <p style="margin-top:20px"><a href="/">← Back to live map</a></p>
+      <footer>
+        isUpMap checks ${SERVICES.length}+ services every few minutes. Data may lag the provider's own status page.
+        &middot; <a href="/status">All services</a>
+      </footer>
+    </div>
+  </aside>
+</div>`;
 
 	return layout({
 		title,
@@ -202,8 +228,9 @@ ${note}
 		canonical,
 		jsonLd,
 		body,
-		extraHead: `<link rel="stylesheet" href="/report.css" />`,
-		scripts: `<script src="/report.js" type="module"></script>`,
+		noWrap: true,
+		extraHead: `<link rel="stylesheet" href="/lib/maplibre-gl.css" /><link rel="stylesheet" href="/report.css" /><style>html,body{height:100%;overflow:hidden}</style>`,
+		scripts: `<script src="/lib/maplibre-gl.js"></script><script src="/report.js" type="module"></script>`,
 	});
 }
 

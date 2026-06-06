@@ -48,9 +48,16 @@ function json(body: unknown, init: ResponseInit = {}): Response {
  * static-asset `_headers` file, so set security headers here. Most pages ship no
  * scripts (`script-src 'none'`); pass `allowSelfScripts: true` only for the
  * service detail page that loads the report widget via `script-src 'self'`.
+ * `allowMap: true` additionally opens connect-src for Protomaps tile/asset fetches
+ * and worker-src blob: for MapLibre GL's web workers.
  */
-function markup(body: string, contentType: string, init: ResponseInit = {}, opts: { allowSelfScripts?: boolean } = {}): Response {
+function markup(body: string, contentType: string, init: ResponseInit = {}, opts: { allowSelfScripts?: boolean; allowMap?: boolean } = {}): Response {
 	const scriptSrc = opts.allowSelfScripts ? "'self'" : "'none'";
+	const connectSrc = opts.allowMap
+		? "'self' https://api.protomaps.com https://protomaps.github.io"
+		: "'self'";
+	const workerSrc = opts.allowMap ? "blob:" : "'none'";
+	const imgSrc = opts.allowMap ? "'self' data: blob:" : "'self' data:";
 	return new Response(body, {
 		...init,
 		headers: {
@@ -59,7 +66,7 @@ function markup(body: string, contentType: string, init: ResponseInit = {}, opts
 			"x-content-type-options": "nosniff",
 			"referrer-policy": "no-referrer",
 			"content-security-policy":
-				`default-src 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; frame-ancestors 'none'`,
+				`default-src 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src ${imgSrc}; connect-src ${connectSrc}; worker-src ${workerSrc}; base-uri 'self'; frame-ancestors 'none'`,
 			...(init.headers ?? {}),
 		},
 	});
@@ -415,8 +422,8 @@ export default {
 
 			const { snapshot } = await loadSnapshot(env);
 			const current = snapshot.services.find((s) => s.id === service.id) ?? null;
-			// Allow script-src 'self' only for the service page, which loads report.js.
-			const resp = markup(renderServicePage(service, current, snapshot.updatedAt), "text/html; charset=utf-8", {}, { allowSelfScripts: true });
+			// Service page loads report.js (scripts) and the Protomaps world map (connect + worker).
+			const resp = markup(renderServicePage(service, current, snapshot.updatedAt, env.PROTOMAPS_KEY ?? ""), "text/html; charset=utf-8", {}, { allowSelfScripts: true, allowMap: true });
 			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;
 		}
