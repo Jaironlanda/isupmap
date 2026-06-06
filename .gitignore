@@ -169,3 +169,6 @@ wrangler.prod.jsonc
 
 # Local Claude Code config
 .claude/
+
+# Local planning docs (not checked in)
+planning/
