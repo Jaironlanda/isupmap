@@ -1,5 +1,6 @@
 # isUpMap — Service Status Heatmap
 
+[![isUpMap status](https://img.shields.io/endpoint?url=https%3A%2F%2Fisupmap.com%2Fapi%2Fsummary%3Fformat%3Dshields)](https://isupmap.com)
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Jaironlanda/isupmap)
 
 **Live: [isUpMap](https://isupmap.com)** (Official)
@@ -66,7 +67,9 @@ Browser (public/) ─poll /api/status every 45s─▶ Worker reads KV (Cache-API
 - `GET /api/summary` returns a single **overall-status rollup** (worst status
   wins) plus a headline (`"All systems operational"` / `"2 down, 1 degraded"`),
   per-status counts, and the same `stale` flag — handy for compact embeds, badges,
-  or a status banner. Same KV-read + Cache-API fronting as `/api/status`.
+  or a status banner. Add `?format=shields` for a [shields.io endpoint badge](https://shields.io/badges/endpoint-badge)
+  payload (status-colored), which powers the live badge at the top of this README.
+  Same KV-read + Cache-API fronting as `/api/status`.
 - All API routes are **rate-limited** per IP (60 req / 60s) via a Workers
   rate-limit binding.
 - **Crawlable pages** — the dashboard is a client-rendered SPA, so for SEO the
