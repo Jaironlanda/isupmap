@@ -16,6 +16,12 @@ export const DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Aggregate counts over the trailing 7-day window. */
 export const REPORT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** One day, in ms — the bucket size for the 7-day report-volume timeline. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Number of daily buckets in the report-volume timeline. */
+const TIMELINE_DAYS = 7;
+
 /** Delete reports older than this during the daily retention sweep. */
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -36,11 +42,29 @@ export interface ReasonCount {
 	count: number;
 }
 
+/** A single recent report row, surfaced in the "Latest reports" feed. */
+export interface RecentReport {
+	country: string;
+	reason: ReportReason;
+	ts: number;
+}
+
+/** One hourly bucket in the 24-hour report-volume timeline. */
+export interface TimelinePoint {
+	/** Start of the hour bucket (ms epoch). */
+	t: number;
+	count: number;
+}
+
 export interface Report {
 	windowMs: number;
 	total: number;
 	countries: CountryCount[];
 	reasons: ReasonCount[];
+	/** Up to 10 most-recent individual reports, newest first. */
+	recent: RecentReport[];
+	/** 7 daily buckets over the last 7 days, oldest first (report-volume chart). */
+	timeline: TimelinePoint[];
 }
 
 /** Internal queue message shape — not part of the public API. */
@@ -109,13 +133,30 @@ interface CountRow {
 	count: number;
 }
 
+interface RecentRow {
+	country: string;
+	reason: string;
+	ts: number;
+}
+
+interface DayRow {
+	day: number;
+	count: number;
+}
+
 /**
  * Aggregate recent reports for a service over the trailing REPORT_WINDOW_MS.
- * Returns totals plus per-country and per-reason breakdowns.
+ * Returns 7-day totals plus per-country and per-reason breakdowns, the 10 newest
+ * individual reports, and a 7-day daily volume timeline.
  */
 export async function aggregateReports(db: D1Database, serviceId: string, now = Date.now()): Promise<Report> {
 	const since = now - REPORT_WINDOW_MS;
-	const [byCountry, byReason] = await db.batch([
+	// 7-day timeline aligned to day boundaries so buckets are whole (UTC) days.
+	const nowDay = Math.floor(now / DAY_MS);
+	const firstDay = nowDay - (TIMELINE_DAYS - 1);
+	const since7 = firstDay * DAY_MS;
+
+	const [byCountry, byReason, latest, byDay] = await db.batch([
 		db
 			.prepare(
 				"SELECT country AS label, COUNT(*) AS count FROM reports WHERE service_id = ? AND ts > ? GROUP BY country ORDER BY count DESC",
@@ -126,13 +167,31 @@ export async function aggregateReports(db: D1Database, serviceId: string, now = 
 				"SELECT reason AS label, COUNT(*) AS count FROM reports WHERE service_id = ? AND ts > ? GROUP BY reason ORDER BY count DESC",
 			)
 			.bind(serviceId, since),
+		db
+			.prepare(
+				"SELECT country, reason, ts FROM reports WHERE service_id = ? AND ts > ? ORDER BY ts DESC LIMIT 10",
+			)
+			.bind(serviceId, since),
+		db
+			.prepare(
+				"SELECT ts / 86400000 AS day, COUNT(*) AS count FROM reports WHERE service_id = ? AND ts >= ? GROUP BY day",
+			)
+			.bind(serviceId, since7),
 	]);
 
 	const countries = (byCountry.results as CountRow[]).map((r) => ({ country: r.label, count: r.count }));
 	const reasons = (byReason.results as CountRow[]).map((r) => ({ reason: r.label as ReportReason, count: r.count }));
+	const recent = (latest.results as RecentRow[]).map((r) => ({ country: r.country, reason: r.reason as ReportReason, ts: r.ts }));
 	const total = countries.reduce((s, c) => s + c.count, 0);
 
-	return { windowMs: REPORT_WINDOW_MS, total, countries, reasons };
+	// Densify the sparse day rows into a contiguous 7-bucket array (oldest first).
+	const dayCounts = new Map((byDay.results as DayRow[]).map((r) => [r.day, r.count]));
+	const timeline: TimelinePoint[] = [];
+	for (let d = firstDay; d <= nowDay; d++) {
+		timeline.push({ t: d * DAY_MS, count: dayCounts.get(d) ?? 0 });
+	}
+
+	return { windowMs: REPORT_WINDOW_MS, total, countries, reasons, recent, timeline };
 }
 
 /** Delete reports older than the retention window. Returns the row count removed. */

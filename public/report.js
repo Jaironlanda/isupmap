@@ -14,12 +14,14 @@
 import { layers, namedFlavor } from "/lib/protomaps-basemaps.esm.js";
 
 const REASONS = [
-  { code: "unreachable", label: "Can't connect" },
-  { code: "errors",      label: "Errors" },
-  { code: "login",       label: "Can't log in" },
-  { code: "slow",        label: "Slow" },
-  { code: "other",       label: "Something else" },
+  { code: "unreachable", label: "Can't connect",   color: "#f85149" },
+  { code: "errors",      label: "Errors",          color: "#db61a2" },
+  { code: "login",       label: "Can't log in",    color: "#a371f7" },
+  { code: "slow",        label: "Slow",            color: "#d29922" },
+  { code: "other",       label: "Something else",  color: "#58a6ff" },
 ];
+
+const REASON_BY_CODE = Object.fromEntries(REASONS.map((r) => [r.code, r]));
 
 // Country centroids [lon, lat] in degrees — used for circle marker positions.
 const CC = {
@@ -298,6 +300,41 @@ function esc(str) {
     .replace(/"/g, "&quot;");
 }
 
+/** Compact relative time, e.g. "just now", "4m", "3h", "2d". */
+function relTime(ts) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 45) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+/** Build an SVG donut from the per-reason breakdown. */
+function donutSvg(reasons, total) {
+  const present = reasons.filter((r) => r.count > 0);
+  let cumulative = 0;
+  const segs = present.map((r) => {
+    const pct = (r.count / total) * 100;
+    const color = REASON_BY_CODE[r.reason]?.color ?? "#8b949e";
+    // stroke-dashoffset 25 starts the arc at 12 o'clock; subtract cumulative to chain.
+    const seg = `<circle class="report-donut__seg" cx="21" cy="21" r="15.91549431"
+      fill="transparent" stroke="${color}" stroke-width="5.5"
+      stroke-dasharray="${pct.toFixed(3)} ${(100 - pct).toFixed(3)}"
+      stroke-dashoffset="${(25 - cumulative).toFixed(3)}"><title>${esc(REASON_BY_CODE[r.reason]?.label ?? r.reason)}: ${r.count}</title></circle>`;
+    cumulative += pct;
+    return seg;
+  }).join("");
+
+  return `<svg class="report-donut__svg" viewBox="0 0 42 42" role="img" aria-label="Report breakdown by reason">
+    <circle class="report-donut__track" cx="21" cy="21" r="15.91549431" fill="transparent" stroke-width="5.5"></circle>
+    ${segs}
+    <text x="21" y="20.2" class="report-donut__num">${total}</text>
+    <text x="21" y="25.6" class="report-donut__cap">report${total === 1 ? "" : "s"}</text>
+  </svg>`;
+}
+
 function votedKey(serviceId) { return `isupmap_voted_${serviceId}`; }
 
 function hasVoted(serviceId) {
@@ -323,45 +360,107 @@ function getVotedReason(serviceId) {
   } catch { return null; }
 }
 
+/** Short date label for a day-bucket timestamp, e.g. "Jun 7". */
+function dayLabel(ts) {
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** 7-day report-volume bar chart from the daily timeline. */
+function volumeChart(timeline) {
+  const total7 = timeline.reduce((s, p) => s + p.count, 0);
+  if (total7 === 0) {
+    return `<p class="report-section__empty">No reports in the last 7 days.</p>`;
+  }
+  const max = Math.max(...timeline.map((p) => p.count), 1);
+  const bars = timeline.map((p) => {
+    const h = p.count === 0 ? 0 : Math.max(8, Math.round((p.count / max) * 100));
+    const tip = `${p.count} report${p.count === 1 ? "" : "s"} · ${dayLabel(p.t)}`;
+    // Full-height column is the hover/focus target so the whole bar slot is reachable.
+    return `<span class="report-spark__col" data-tip="${esc(tip)}" tabindex="0" role="img" aria-label="${esc(tip)}">
+      <span class="report-spark__bar${p.count ? "" : " is-empty"}" style="height:${h}%"></span>
+    </span>`;
+  }).join("");
+  return `<div class="report-spark" role="group" aria-label="Report volume over the last 7 days">${bars}</div>
+    <div class="report-spark__axis"><span>7d ago</span><span>today</span></div>`;
+}
+
+/** Top-5 countries by total reports, as labelled proportional bars. */
+function topCountries(countries) {
+  const list = countries.filter((c) => c.country && c.country !== "Unknown").slice(0, 5);
+  if (!list.length) {
+    return `<p class="report-section__empty">No country reports yet.</p>`;
+  }
+  const max = Math.max(...list.map((c) => c.count), 1);
+  return `<ul class="report-topc">${list.map((c) => {
+    const name = CN_NAMES[c.country] || c.country;
+    const w = Math.max(6, Math.round((c.count / max) * 100));
+    return `<li class="report-topc__row">
+      <span class="report-topc__flag" aria-hidden="true">${flagEmoji(c.country)}</span>
+      <span class="report-topc__name">${esc(name)}</span>
+      <span class="report-topc__count">${c.count}</span>
+      <span class="report-topc__track"><span class="report-topc__fill" style="width:${w}%"></span></span>
+    </li>`;
+  }).join("")}</ul>`;
+}
+
 // ---- Breakdown --------------------------------------------------------------
 
 function renderBreakdown(container, report) {
   if (!report) {
-    container.innerHTML = `<p class="report-widget__count" aria-live="polite">Loading…</p>`;
+    container.innerHTML = `<p class="report-widget__empty" aria-live="polite">Loading…</p>`;
     return;
   }
 
-  const { total = 0, reasons = [], countries = [] } = report;
+  const { total = 0, reasons = [], recent = [], timeline = [], countries = [] } = report;
 
   if (total === 0) {
-    container.innerHTML = `<p class="report-widget__count">No reports in the last 7 days.</p>`;
+    container.innerHTML = `<p class="report-widget__empty">No reports in the last 7 days.</p>`;
     return;
   }
 
-  const maxReason = Math.max(...reasons.map((r) => r.count), 1);
-  const barsHtml = reasons.map((r) => {
-    const label = REASONS.find((x) => x.code === r.reason)?.label ?? r.reason;
-    const pct = Math.round((r.count / maxReason) * 100);
-    return `<div class="report-bar">
-      <span class="report-bar__label">${esc(label)}</span>
-      <span class="report-bar__track"><span class="report-bar__fill" style="width:${pct}%"></span></span>
-      <span class="report-bar__num">${r.count}</span>
-    </div>`;
+  // Donut + legend, ordered by count desc.
+  const ordered = [...reasons].filter((r) => r.count > 0).sort((a, b) => b.count - a.count);
+  const legendHtml = ordered.map((r) => {
+    const meta = REASON_BY_CODE[r.reason];
+    const pct = Math.round((r.count / total) * 100);
+    return `<li class="report-legend__row">
+      <span class="report-legend__swatch" style="background:${meta?.color ?? "#8b949e"}"></span>
+      <span class="report-legend__label">${esc(meta?.label ?? r.reason)}</span>
+      <span class="report-legend__val">${r.count} · ${pct}%</span>
+    </li>`;
   }).join("");
 
-  const countryRows = countries
-    .filter((c) => c.country !== "Unknown")
-    .slice(0, 8)
-    .map((c) => `<div class="report-country">
-      <span class="report-country__flag" aria-hidden="true">${flagEmoji(c.country)}</span>
-      <span class="report-country__name">${esc(c.country)}</span>
-      <span class="report-country__count">${c.count}</span>
-    </div>`).join("");
+  // Latest individual reports (max 10).
+  const latestHtml = recent.slice(0, 10).map((r) => {
+    const label = REASON_BY_CODE[r.reason]?.label ?? r.reason;
+    const color = REASON_BY_CODE[r.reason]?.color ?? "#8b949e";
+    const known = r.country && r.country !== "Unknown";
+    const name = known ? (CN_NAMES[r.country] || r.country) : "Unknown";
+    return `<li class="report-latest__row">
+      <span class="report-latest__flag" aria-hidden="true">${flagEmoji(r.country)}</span>
+      <span class="report-latest__country">${esc(name)}</span>
+      <span class="report-latest__reason" style="color:${color}">${esc(label)}</span>
+      <span class="report-latest__time">${esc(relTime(r.ts))}</span>
+    </li>`;
+  }).join("");
 
   container.innerHTML = `
-    <p class="report-widget__count"><strong>${total}</strong> report${total === 1 ? "" : "s"} in the last 7 days</p>
-    ${barsHtml ? `<div class="report-bars">${barsHtml}</div>` : ""}
-    ${countryRows ? `<div class="report-countries"><p class="report-countries__head">By country</p>${countryRows}</div>` : ""}`;
+    <div class="report-donut">
+      ${donutSvg(reasons, total)}
+      <ul class="report-legend">${legendHtml}</ul>
+    </div>
+    <p class="report-widget__total"><strong>${total}</strong> report${total === 1 ? "" : "s"} in the last 7 days</p>
+
+    <hr class="report-rule" />
+    <p class="report-section__head">Report volume <span class="report-section__sub">7d</span></p>
+    ${volumeChart(timeline)}
+
+    <hr class="report-rule" />
+    <p class="report-section__head">Top countries <span class="report-section__sub">7d</span></p>
+    ${topCountries(countries)}
+    ${latestHtml ? `<hr class="report-rule" />
+    <p class="report-latest__head">Latest reports</p>
+    <ul class="report-latest">${latestHtml}</ul>` : ""}`;
 }
 
 // ---- Mount (vote widget) ----------------------------------------------------
@@ -372,15 +471,21 @@ async function mount(el, serviceId, _opts = {}) {
   const alreadyVoted = hasVoted(serviceId);
   const votedReason  = getVotedReason(serviceId);
 
+  const HELP = "Community-submitted reports from visitors over the last 7 days. A crowd signal, not an official status check.";
+  const head = `<div class="report-widget__head">
+      <span>Community Reports</span>
+      <span class="report-widget__help" tabindex="0" role="img" aria-label="${esc(HELP)}" title="${esc(HELP)}">?</span>
+    </div>`;
+
   if (alreadyVoted) {
     const reasonLabel = REASONS.find((r) => r.code === votedReason)?.label ?? votedReason ?? "it";
     el.innerHTML = `
-      <p class="report-widget__head">Community reports</p>
+      ${head}
       <p class="report-widget__thanks">Thanks — reported as "${esc(reasonLabel)}"</p>
       <div class="report-breakdown"></div>`;
   } else {
     el.innerHTML = `
-      <p class="report-widget__head">Community reports</p>
+      ${head}
       <p class="report-widget__prompt">Experiencing issues? Let others know.</p>
       <div class="report-reasons">${REASONS.map((r) => `
         <button class="report-reason-btn" data-reason="${esc(r.code)}" type="button">${esc(r.label)}</button>`).join("")}
@@ -409,7 +514,14 @@ async function mount(el, serviceId, _opts = {}) {
           });
           if (res.ok) {
             const { report } = await res.json();
-            if (report && typeof report.total === "number") report.total += 1;
+            if (report && typeof report.total === "number") {
+              // Optimistically fold this vote in so the donut + total stay consistent.
+              report.total += 1;
+              report.reasons = Array.isArray(report.reasons) ? [...report.reasons] : [];
+              const existing = report.reasons.find((x) => x.reason === reason);
+              if (existing) existing.count += 1;
+              else report.reasons.push({ reason, count: 1 });
+            }
             renderBreakdown(el.querySelector(".report-breakdown"), report);
             // Refresh map markers with updated data.
             updateMapWithReport(report);

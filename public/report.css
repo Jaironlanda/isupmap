@@ -41,7 +41,166 @@
 }
 
 .sp-inner {
-  padding: 24px 20px 56px;
+  padding: 16px 16px 40px;
+  /* --status is set inline per-page to the current status colour. */
+}
+
+/* Top bar: brand + breadcrumbs */
+.sp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.sp-top .brand { font-size: 13px; gap: 6px; }
+.sp-top .brand img { width: 20px; height: 20px; }
+.sp-top .crumbs { margin: 0; font-size: 11px; }
+
+/* Question headline */
+.sp-q {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -.01em;
+  margin: 0 0 12px;
+}
+
+/* Generic card shell (service card + community-reports card) */
+.sp-card {
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 0 0 12px;
+  background: rgba(255, 255, 255, .025);
+}
+
+/* Service card: subtle status-tinted top edge */
+.sp-card--service {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--status) 12%, transparent), transparent 64px),
+    rgba(255, 255, 255, .025);
+  border-color: color-mix(in srgb, var(--status) 24%, rgba(255, 255, 255, .08));
+}
+
+/* Service identity row: logo · name/category · heartbeat */
+.sp-svc {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.sp-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, .06);
+  padding: 5px;
+  flex-shrink: 0;
+}
+
+.sp-svc-main { min-width: 0; flex: 1; }
+
+.sp-svc-name {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -.01em;
+}
+
+.sp-svc-cat {
+  font-size: 12px;
+  color: #8b949e;
+  margin-top: 2px;
+}
+
+/* Heartbeat (ECG) status indicator */
+.sp-beat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  color: var(--status);
+  cursor: default;
+}
+
+.sp-beat-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sp-beat-svg {
+  width: 40px;
+  height: 14px;
+  overflow: visible;
+}
+
+.sp-beat-svg polyline {
+  fill: none;
+  stroke: var(--status);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 56;
+  stroke-dashoffset: 56;
+  animation: sp-ecg 2.4s linear infinite;
+}
+
+/* Faster sweep when something is wrong. */
+.sp-beat--down .sp-beat-svg polyline,
+.sp-beat--degraded .sp-beat-svg polyline { animation-duration: 1.3s; }
+.sp-beat--unknown .sp-beat-svg polyline { animation: none; stroke-dashoffset: 0; opacity: .5; }
+
+@keyframes sp-ecg {
+  0%   { stroke-dashoffset: 56; }
+  55%  { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -56; }
+}
+
+/* Status / incident note inside the service card */
+.sp-svc-note {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #c9d1d9;
+  margin: 11px 0 0;
+}
+
+/* Hairline divider used inside cards */
+.sp-rule {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  margin: 12px 0;
+}
+
+/* Official status page link */
+.sp-ext {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #e6edf3;
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: color .12s;
+}
+
+.sp-ext:hover { text-decoration: none; color: #fff; }
+.sp-ext:hover .sp-ext-arrow { transform: translate(1px, -1px); }
+.sp-ext-arrow { color: #58a6ff; font-size: 13px; transition: transform .12s; }
+
+/* Back link */
+.sp-back {
+  display: inline-block;
+  margin: 4px 0 0;
+  font-size: 12.5px;
+}
+
+.sp-inner footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  font-size: 11px;
 }
 
 /* Responsive: stack vertically on narrow screens */
@@ -99,27 +258,44 @@
   border-bottom-color: rgba(22, 27, 34, 0.96) !important;
 }
 
-/* ---- Community report widget ---- */
-
-.report-widget {
-  margin: 20px 0;
-  border: 1px solid rgba(255, 255, 255, .08);
-  border-radius: 12px;
-  padding: 16px 18px;
-  background: rgba(255, 255, 255, .03);
-}
+/* ---- Community report card ---- */
+/* The widget element is also a `.sp-card`, so card chrome is inherited. */
 
 .report-widget__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: #c9d1d9;
+  color: #e6edf3;
   margin: 0 0 12px;
 }
 
-.report-widget__prompt {
-  font-size: 13px;
+.report-widget__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .22);
   color: #8b949e;
-  margin: 0 0 10px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+}
+
+.report-widget__help:hover,
+.report-widget__help:focus-visible {
+  color: #e6edf3;
+  border-color: rgba(255, 255, 255, .42);
+  outline: none;
+}
+
+.report-widget__prompt {
+  font-size: 12.5px;
+  color: #8b949e;
+  margin: 0 0 9px;
 }
 
 /* Reason picker */
@@ -157,85 +333,325 @@
 .report-widget__thanks {
   font-size: 13px;
   color: #3fb950;
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 
-/* Count */
-.report-widget__count {
-  font-size: 13px;
+/* Empty / loading state */
+.report-widget__empty {
+  font-size: 12.5px;
   color: #8b949e;
-  margin: 0 0 8px;
+  margin: 0;
 }
 
-.report-widget__count strong { color: #e6edf3; }
+/* Donut + legend */
+.report-donut {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 2px 0 12px;
+}
 
-/* Per-reason bars */
-.report-bars {
+.report-donut__svg {
+  width: 82px;
+  height: 82px;
+  flex-shrink: 0;
+}
+
+.report-donut__track { stroke: rgba(255, 255, 255, .07); }
+
+.report-donut__seg {
+  transition: stroke-dasharray .4s ease;
+  transform-origin: center;
+}
+
+.report-donut__num {
+  fill: #e6edf3;
+  font: 700 8px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-anchor: middle;
+}
+
+.report-donut__cap {
+  fill: #8b949e;
+  font: 3.2px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-anchor: middle;
+  letter-spacing: .12px;
+  text-transform: uppercase;
+}
+
+.report-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  margin: 10px 0 0;
 }
 
-.report-bar {
+.report-legend__row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: #8b949e;
+  gap: 7px;
+  font-size: 11.5px;
+  color: #c9d1d9;
 }
 
-.report-bar__label {
-  width: 88px;
+.report-legend__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
   flex-shrink: 0;
+}
+
+.report-legend__label {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.report-bar__track {
+.report-legend__val {
+  flex-shrink: 0;
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-widget__total {
+  font-size: 12.5px;
+  color: #8b949e;
+  margin: 0;
+}
+
+.report-widget__total strong { color: #e6edf3; }
+
+.report-rule {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  margin: 12px 0;
+}
+
+/* Section heading shared by the 24h sub-sections */
+.report-section__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #8b949e;
+  margin: 0 0 8px;
+}
+
+.report-section__sub {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: #8b949e;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .06);
+}
+
+.report-section__empty {
+  font-size: 12px;
+  color: #8b949e;
+  margin: 0;
+}
+
+/* 7d report-volume sparkline (bars) */
+.report-spark {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  height: 44px;
+  padding: 0;
+}
+
+/* Full-height hover/focus target per day bucket */
+.report-spark__col {
+  position: relative;
   flex: 1;
-  height: 5px;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  cursor: default;
+}
+
+.report-spark__bar {
+  width: 100%;
+  background: #f0883e;
+  border-radius: 2px 2px 0 0;
+  transition: height .3s ease, background .12s;
+}
+
+.report-spark__col:hover .report-spark__bar,
+.report-spark__col:focus-visible .report-spark__bar { background: #ffa657; }
+
+.report-spark__col:focus-visible { outline: none; }
+
+.report-spark__bar.is-empty {
+  height: 2px !important;
+  background: rgba(255, 255, 255, .08);
+  border-radius: 2px;
+}
+
+/* Tooltip bubble shown on hover/focus */
+.report-spark__col::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -6px);
+  margin-bottom: 2px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(22, 27, 34, .97);
+  border: 1px solid rgba(255, 255, 255, .14);
+  color: #e6edf3;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 5;
+  transition: opacity .12s;
+}
+
+/* Little caret under the bubble */
+.report-spark__col::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: rgba(22, 27, 34, .97);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 5;
+  transition: opacity .12s;
+}
+
+.report-spark__col:hover::after,
+.report-spark__col:hover::before,
+.report-spark__col:focus-visible::after,
+.report-spark__col:focus-visible::before { opacity: 1; }
+
+.report-spark__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 10px;
+  color: #6e7681;
+}
+
+/* Top countries (24h) ranked bars */
+.report-topc {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.report-topc__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.report-topc__flag { font-size: 14px; line-height: 1; flex-shrink: 0; }
+
+.report-topc__name {
+  flex: 1;
+  min-width: 0;
+  color: #c9d1d9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.report-topc__count {
+  flex-shrink: 0;
+  color: #e6edf3;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-topc__track {
+  flex-shrink: 0;
+  width: 64px;
+  height: 6px;
   background: rgba(255, 255, 255, .06);
   border-radius: 999px;
   overflow: hidden;
 }
 
-.report-bar__fill {
+.report-topc__fill {
+  display: block;
   height: 100%;
-  background: #58a6ff;
+  background: #f0883e;
   border-radius: 999px;
-  transition: width .3s;
+  transition: width .3s ease;
 }
 
-.report-bar__num {
-  width: 24px;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-/* Per-country ranked list */
-.report-countries {
-  margin: 12px 0 0;
-  font-size: 12px;
-}
-
-.report-countries__head {
+/* Latest reports feed */
+.report-latest__head {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .04em;
   color: #8b949e;
-  margin: 0 0 5px;
+  margin: 0 0 4px;
 }
 
-.report-country {
+.report-latest {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.report-latest__row {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 0;
-  color: #c9d1d9;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+  border-top: 1px solid rgba(255, 255, 255, .06);
 }
 
-.report-country__flag { font-size: 14px; line-height: 1; }
-.report-country__name { flex: 1; }
-.report-country__count { color: #8b949e; }
+.report-latest__row:first-child { border-top: 0; }
+
+.report-latest__flag { font-size: 14px; line-height: 1; flex-shrink: 0; }
+
+.report-latest__country {
+  flex: 1;
+  min-width: 0;
+  color: #c9d1d9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.report-latest__reason {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.report-latest__time {
+  flex-shrink: 0;
+  min-width: 46px;
+  text-align: right;
+  color: #8b949e;
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-beat-svg polyline { animation: none; stroke-dashoffset: 0; }
+}

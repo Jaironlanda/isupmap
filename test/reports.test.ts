@@ -108,6 +108,36 @@ describe("insertReports / aggregateReports", () => {
 		expect(report.total).toBe(0);
 		expect(report.countries).toHaveLength(0);
 		expect(report.reasons).toHaveLength(0);
+		expect(report.recent).toHaveLength(0);
+	});
+
+	it("returns a 7-bucket daily volume timeline", async () => {
+		const now = Date.now();
+		const day = 24 * 60 * 60 * 1000;
+		await insertReports(env.REPORTS_DB, [
+			vote("svc-a", "h1", "US", "errors", now),            // today
+			vote("svc-a", "h2", "GB", "slow", now),              // today
+			vote("svc-a", "h3", "US", "unreachable", now - day), // yesterday
+			vote("svc-a", "h4", "DE", "other", now - 3 * day),   // 3 days ago
+		]);
+		const report = await aggregateReports(env.REPORTS_DB, "svc-a", now);
+
+		expect(report.timeline).toHaveLength(7);
+		expect(report.timeline.at(-1)?.count).toBe(2);        // newest bucket: 2 reports today
+		expect(report.timeline.reduce((s, p) => s + p.count, 0)).toBe(4);
+	});
+
+	it("returns the newest reports first in `recent`, capped at 10", async () => {
+		const now = Date.now();
+		const rows = Array.from({ length: 12 }, (_, i) =>
+			vote("svc-a", `hash${i}`, "US", "errors", now - i * 1000),
+		);
+		await insertReports(env.REPORTS_DB, rows);
+		const report = await aggregateReports(env.REPORTS_DB, "svc-a", now);
+		expect(report.recent).toHaveLength(10);
+		// Newest (ts = now, smallest i) comes first.
+		expect(report.recent[0].ts).toBe(now);
+		expect(report.recent[0].ts).toBeGreaterThan(report.recent[9].ts);
 	});
 });
 

@@ -383,7 +383,7 @@ export default {
 				await env.VOTE_QUEUE.send(msg);
 
 				// Return the current (possibly stale) count so the UI can show it immediately.
-				const current = (await readCount(env.SNAPSHOT_KV, service.id)) ?? { windowMs: 0, total: 0, countries: [], reasons: [] };
+				const current = (await readCount(env.SNAPSHOT_KV, service.id)) ?? { windowMs: 0, total: 0, countries: [], reasons: [], recent: [], timeline: [] };
 				return json({ ok: true, report: current }, { status: 202, headers: { "cache-control": "no-store" } });
 			}
 

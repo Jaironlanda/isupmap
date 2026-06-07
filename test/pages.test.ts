@@ -29,14 +29,20 @@ describe("renderServicePage", () => {
 		expect(html).toContain(`<script src="/report.js" type="module">`);
 	});
 
-	it("shows uptime stats only when status is known", () => {
-		const up = renderServicePage(svc, apiService(svc.id, "up", { uptime: { day: 0.9876, week: 0.9999 } }), 1000);
-		expect(up).toContain("98.76%");
-		expect(up).toContain("24-hour uptime");
+	it("renders the service card with status, heartbeat, and official link", () => {
+		const up = renderServicePage(svc, apiService(svc.id, "up"), 1000);
+		expect(up).toContain("Operational"); // status label in the heartbeat indicator
+		expect(up).toContain("sp-beat--up"); // heartbeat tone class
+		expect(up).toContain(`Official ${svc.name} status page`);
 
 		const unknown = renderServicePage(svc, null, 1000);
-		expect(unknown).not.toContain("24-hour uptime");
 		expect(unknown).toContain("Unknown");
+		expect(unknown).toContain("sp-beat--unknown");
+	});
+
+	it("mounts an empty community-reports card for the client to fill", () => {
+		const html = renderServicePage(svc, apiService(svc.id, "up"), 1000);
+		expect(html).toContain('class="sp-card" data-report-widget');
 	});
 
 	it("escapes untrusted snapshot text", () => {
