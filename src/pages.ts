@@ -203,6 +203,12 @@ export function renderServicePage(service: Service, current: ApiService | null, 
       </span>`;
 
 	const provider = statusPageUrl(service);
+	let providerHost = "";
+	try {
+		providerHost = new URL(provider).host;
+	} catch {
+		/* provider isn't a parseable URL; omit the host line */
+	}
 	const iconUrl = `/images/logo/services/${escapeHtml(service.id)}.png`;
 
 	const jsonLd = {
@@ -257,7 +263,10 @@ export function renderServicePage(service: Service, current: ApiService | null, 
         ${note}
         <hr class="sp-rule" />
         <a class="sp-ext" href="${escapeHtml(provider)}" target="_blank" rel="noopener nofollow">
-          <span>Official ${escapeHtml(name)} status page</span>
+          <span class="sp-ext-main">
+            <span>Official ${escapeHtml(name)} status page</span>
+            ${providerHost ? `<span class="sp-ext-host">${escapeHtml(providerHost)}</span>` : ""}
+          </span>
           <span class="sp-ext-arrow" aria-hidden="true">↗</span>
         </a>
       </section>

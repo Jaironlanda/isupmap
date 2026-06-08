@@ -247,7 +247,23 @@
 
 .sp-ext:hover { text-decoration: none; color: #fff; }
 .sp-ext:hover .sp-ext-arrow { transform: translate(1px, -1px); }
-.sp-ext-arrow { color: #58a6ff; font-size: 13px; transition: transform .12s; }
+.sp-ext-arrow { color: #58a6ff; font-size: 13px; flex-shrink: 0; transition: transform .12s; }
+
+.sp-ext-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sp-ext-host {
+  font-size: 11px;
+  font-weight: 400;
+  color: #8b949e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .sp-inner footer {
   margin-top: 16px;
