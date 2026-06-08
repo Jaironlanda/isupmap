@@ -349,7 +349,7 @@ npm run db:schema:reports:remote                # applies schema-reports.sql to 
 
 > Set `PROTOMAPS_KEY` (via `wrangler secret put` or in `wrangler.jsonc`) to
 > enable the world map on `/status/:id` pages. A free key is available at
-> [app.protomaps.com](https://app.protomaps.com). Leave it empty to skip the map.
+> [protomaps.com](https://protomaps.com). Leave it empty to skip the map.
 
 ### Rate-limit binding
 
