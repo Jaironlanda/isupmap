@@ -110,6 +110,7 @@ ${opts.body}
 <footer>
 isUpMap checks ${SERVICES.length}+ services every few minutes. Status reflects the latest automated probe and may lag the provider's own status page.
 &middot; <a href="/">Live status map</a> &middot; <a href="/status">All services</a>
+&middot; <a href="/terms">Terms</a> &middot; <a href="/privacy">Privacy</a>
 </footer>
 </div>`;
 
@@ -276,6 +277,7 @@ export function renderServicePage(service: Service, current: ApiService | null, 
       <footer>
         isUpMap checks ${SERVICES.length}+ services every few minutes. Status reflects the latest automated probe and may lag the provider's own page.
         &middot; <a href="/status">All services</a>
+        &middot; <a href="/terms">Terms</a> &middot; <a href="/privacy">Privacy</a>
       </footer>
     </div>
   </aside>`;
@@ -369,6 +371,8 @@ export function renderSitemap(): string {
 	const urls = [
 		{ loc: `${CANONICAL_ORIGIN}/`, changefreq: "hourly", priority: "1.0" },
 		{ loc: `${CANONICAL_ORIGIN}/status`, changefreq: "hourly", priority: "0.8" },
+		{ loc: `${CANONICAL_ORIGIN}/terms`, changefreq: "monthly", priority: "0.3" },
+		{ loc: `${CANONICAL_ORIGIN}/privacy`, changefreq: "monthly", priority: "0.3" },
 		...SERVICES.map((s) => ({ loc: `${CANONICAL_ORIGIN}/status/${s.id}`, changefreq: "hourly", priority: "0.6" })),
 	];
 	const body = urls
