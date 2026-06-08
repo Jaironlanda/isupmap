@@ -84,8 +84,8 @@ describe("renderSitemap", () => {
 		expect(xml).toContain("<loc>https://isupmap.com/</loc>");
 		expect(xml).toContain("<loc>https://isupmap.com/status</loc>");
 		for (const s of SERVICES) expect(xml).toContain(`<loc>https://isupmap.com/status/${s.id}</loc>`);
-		// Well-formed: one <url> per entry (home + directory + every service).
+		// Well-formed: one <url> per entry (home + directory + terms + privacy + every service).
 		const urlCount = (xml.match(/<url>/g) ?? []).length;
-		expect(urlCount).toBe(SERVICES.length + 2);
+		expect(urlCount).toBe(SERVICES.length + 4);
 	});
 });
