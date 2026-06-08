@@ -49,9 +49,9 @@ export interface RecentReport {
 	ts: number;
 }
 
-/** One hourly bucket in the 24-hour report-volume timeline. */
+/** One daily bucket in the 7-day report-volume timeline. */
 export interface TimelinePoint {
-	/** Start of the hour bucket (ms epoch). */
+	/** Start of the day bucket (ms epoch, UTC-aligned). */
 	t: number;
 	count: number;
 }

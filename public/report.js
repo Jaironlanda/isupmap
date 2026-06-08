@@ -465,7 +465,7 @@ function renderBreakdown(container, report) {
 
 // ---- Mount (vote widget) ----------------------------------------------------
 
-async function mount(el, serviceId, _opts = {}) {
+async function mount(el, serviceId) {
   el.classList.add("report-widget");
 
   const alreadyVoted = hasVoted(serviceId);
