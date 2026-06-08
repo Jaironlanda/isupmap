@@ -40,7 +40,7 @@ async function fetchUpstream(url: string, init: RequestInit = {}): Promise<Respo
 		return await fetch(url, {
 			...init,
 			signal: controller.signal,
-			headers: { "user-agent": "isUpMap-StatusMonitor/1.0 (+https://github.com)", ...(init.headers ?? {}) },
+			headers: { "user-agent": "IsUpMapBot/1.0 (+https://isupmap.com/bot)", ...(init.headers ?? {}) },
 			// `cf` is honored by the Workers runtime (ignored locally / in other runtimes).
 			cf: { cacheTtl: UPSTREAM_CACHE_TTL, cacheEverything: true },
 		} as RequestInit);
