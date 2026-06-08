@@ -252,7 +252,7 @@ async function initMap(el) {
       `<div class="sp-map-placeholder">
         <p>Map unavailable.</p>
         <p class="sp-map-hint">Set <code>PROTOMAPS_KEY</code> in your Worker env to enable the world map.<br>
-        Get a free key at <a href="https://app.protomaps.com" target="_blank" rel="noopener">app.protomaps.com</a>.</p>
+        Get a free key at <a href="https://protomaps.com" target="_blank" rel="noopener">protomaps.com</a>.</p>
       </div>`;
     return;
   }

@@ -28,7 +28,7 @@
 		// default here just satisfies the binding type; production must use a real secret.
 		"VOTE_SALT": "",
 		// Protomaps API key for the world map on /status/<id> pages.
-		// Get a free key at https://app.protomaps.com — leave empty to disable the map.
+		// Get a free key at https://protomaps.com — leave empty to disable the map.
 		"PROTOMAPS_KEY": ""
 	},
 	"observability": {
