@@ -343,17 +343,20 @@ export default {
 
 		if (url.pathname === "/api/incidents") {
 			const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 25));
-			// Cache per-colo keyed by the clamped limit (so arbitrary query strings
-			// don't fragment the cache). Incidents change rarely → ~1 read/min/colo.
+			// Optional per-service filter (used by the detail sheet). Validated against
+			// the catalog so the value is a known id before it reaches the cache key / D1.
+			const serviceId = findService(url.searchParams.get("service") ?? "")?.id;
+			// Cache per-colo keyed by the clamped limit + service (so arbitrary query
+			// strings don't fragment the cache). Incidents change rarely → ~1 read/min/colo.
 			const cache = caches.default;
-			const cacheKey = new Request(new URL(`/api/incidents?limit=${limit}`, url.origin).toString(), { method: "GET" });
+			const cacheKey = new Request(new URL(`/api/incidents?limit=${limit}${serviceId ? `&service=${serviceId}` : ""}`, url.origin).toString(), { method: "GET" });
 			const hit = await cache.match(cacheKey);
 			if (hit) return hit;
 
 			const limited = await rateLimit(request, env);
 			if (limited) return limited;
 
-			const resp = json({ incidents: await recentIncidents(env.DB, limit) });
+			const resp = json({ incidents: await recentIncidents(env.DB, limit, serviceId) });
 			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;
 		}

@@ -1201,15 +1201,21 @@ async function openDetail(svc) {
 	if (widgetEl && window.isupReport) {
 		window.isupReport.mount(widgetEl, svc.id, { status: svc.status });
 	}
-	// Incident history for this service (client-side filter of the recent log).
-	detailBody.querySelector(".detail__incidents").innerHTML = `<p class="panel__empty">Loading history…</p>`;
+	// Incident history for this service: the 2 most recent, queried per-service.
+	// The whole section stays hidden unless there's at least one incident (no
+	// flash while loading, no empty-state filler).
+	const historyEl = detailBody.querySelector(".detail__history");
 	try {
-		const res = await fetch("/api/incidents?limit=100", { cache: "no-store", headers: { accept: "application/json" } });
+		const res = await fetch(`/api/incidents?service=${encodeURIComponent(svc.id)}&limit=2`, { cache: "no-store", headers: { accept: "application/json" } });
 		const { incidents } = await res.json();
-		const mine = incidents.filter((i) => i.serviceId === svc.id);
-		renderDetailIncidents(mine);
+		// Guard against a slow response after the user reopened a different service.
+		if (detailId !== svc.id) return;
+		if (incidents && incidents.length) {
+			renderDetailIncidents(incidents);
+			historyEl.hidden = false;
+		}
 	} catch {
-		detailBody.querySelector(".detail__incidents").innerHTML = `<p class="panel__empty">Couldn't load history.</p>`;
+		/* leave the section hidden on error — nothing to show */
 	}
 }
 
@@ -1258,10 +1264,12 @@ function renderDetailHeader(svc) {
 		<div class="detail__report-card">
 			<div data-report-widget data-service-id="${escapeHtml(svc.id)}"></div>
 		</div>
-		<div class="detail__section-head">
-			<h3 class="detail__subhead">Incident history</h3>
-		</div>
-		<div class="detail__incidents"></div>`;
+		<section class="detail__history" hidden>
+			<div class="detail__section-head">
+				<h3 class="detail__subhead">Incident history</h3>
+			</div>
+			<div class="detail__incidents"></div>
+		</section>`;
 
 	// Set logo via CSSOM (avoids inline style= under our CSP).
 	const logoEl = detailBody.querySelector("#detailLogo");

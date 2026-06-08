@@ -235,15 +235,21 @@ export async function readSnapshot(db: D1Database, now = Date.now()): Promise<{ 
 	return { updatedAt: lastRun ? Number(lastRun.value) : null, services };
 }
 
-/** Most recent incidents (newest first), joined with the service name. */
-export async function recentIncidents(db: D1Database, limit = 25): Promise<IncidentRecord[]> {
+/**
+ * Most recent incidents (newest first), joined with the service name.
+ * Pass `serviceId` to restrict to a single service (used by the detail sheet).
+ */
+export async function recentIncidents(db: D1Database, limit = 25, serviceId?: string): Promise<IncidentRecord[]> {
+	const where = serviceId ? "WHERE i.service_id = ?" : "";
+	const binds = serviceId ? [serviceId, limit] : [limit];
 	const rows = await db
 		.prepare(
 			`SELECT i.id, i.service_id, c.name AS service_name, c.category, i.status, i.description, i.started_at, i.ended_at
 			 FROM incidents i LEFT JOIN current c ON c.service_id = i.service_id
+			 ${where}
 			 ORDER BY i.started_at DESC LIMIT ?`,
 		)
-		.bind(limit)
+		.bind(...binds)
 		.all<{
 			id: number;
 			service_id: string;
