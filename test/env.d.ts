@@ -5,7 +5,7 @@ declare module "cloudflare:test" {
 	interface ProvidedEnv extends Env {}
 }
 
-// Allow `import schema from "../schema.sql?raw"` in tests.
+// Allow `import schema from "../schema.sql?raw"` and `"../schema-reports.sql?raw"` in tests.
 declare module "*.sql?raw" {
 	const content: string;
 	export default content;

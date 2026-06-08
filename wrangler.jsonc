@@ -22,7 +22,14 @@
 	// Empty here on purpose: forks/clones send NO analytics. Put your real
 	// "G-XXXXXXXXXX" in wrangler.prod.jsonc (gitignored) — never in this public file.
 	"vars": {
-		"GA_ID": ""
+		"GA_ID": "",
+		// Salt for the IP hash — override with `wrangler secret put VOTE_SALT` in
+		// production (and set VOTE_SALT in .dev.vars for local dev). The empty
+		// default here just satisfies the binding type; production must use a real secret.
+		"VOTE_SALT": "",
+		// Protomaps API key for the world map on /status/<id> pages.
+		// Get a free key at https://protomaps.com — leave empty to disable the map.
+		"PROTOMAPS_KEY": ""
 	},
 	"observability": {
 		"enabled": true
@@ -45,6 +52,14 @@
 			"binding": "DB",
 			"database_name": "isupmap",
 			"database_id": ""
+		},
+		// Separate D1 for community vote data — isolated so vote storms during an
+		// outage don't serialise behind the authoritative status writes in DB.
+		// Create: `npx wrangler d1 create isupmap-reports` and paste the id below.
+		{
+			"binding": "REPORTS_DB",
+			"database_name": "isupmap-reports",
+			"database_id": ""
 		}
 	],
 	// Hot read-cache for the public snapshot: the cron writes the finished
@@ -58,13 +73,40 @@
 			"id": "00000000000000000000000000000000"
 		}
 	],
+	// Queue for buffering community vote writes. The consumer coalesces a burst
+	// of votes into a handful of D1 inserts so the vote storm during an outage
+	// doesn't hammer REPORTS_DB directly from the edge.
+	// Create: `npx wrangler queues create isupmap-votes` (+ isupmap-votes-dlq).
+	"queues": {
+		"producers": [
+			{ "binding": "VOTE_QUEUE", "queue": "isupmap-votes" }
+		],
+		"consumers": [
+			{
+				"queue": "isupmap-votes",
+				"max_batch_size": 100,
+				"max_batch_timeout": 60,
+				"max_retries": 3,
+				"dead_letter_queue": "isupmap-votes-dlq"
+			}
+		]
+	},
 	// Per-IP rate limiting for the public /api/* endpoints: 60 requests / 60s.
+	// VOTE_RATE_LIMITER is tighter (10 req / 60 s) to cap vote-queue flooding.
 	"ratelimits": [
 		{
 			"name": "API_RATE_LIMITER",
 			"namespace_id": "1001",
 			"simple": {
 				"limit": 60,
+				"period": 60
+			}
+		},
+		{
+			"name": "VOTE_RATE_LIMITER",
+			"namespace_id": "1002",
+			"simple": {
+				"limit": 10,
 				"period": 60
 			}
 		}

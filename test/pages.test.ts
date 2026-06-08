@@ -9,23 +9,52 @@ function apiService(id: string, status: StatusLevel, over: Partial<ApiService> =
 const svc: Service = SERVICES[0];
 
 describe("renderServicePage", () => {
-	it("renders an indexable, JS-free page with canonical + status copy", () => {
+	it("renders an indexable page with canonical + status copy", () => {
 		const html = renderServicePage(svc, apiService(svc.id, "down", { description: "Major outage" }), 1_700_000_000_000);
 		expect(html).toContain(`<link rel="canonical" href="https://isupmap.com/status/${svc.id}" />`);
 		expect(html).toContain(`Is ${svc.name} down?`);
 		expect(html).toContain("Major outage"); // incident note surfaced
 		expect(html).toContain("Down"); // status label
-		expect(html).not.toContain("<script src"); // no client JS
 	});
 
-	it("shows uptime stats only when status is known", () => {
-		const up = renderServicePage(svc, apiService(svc.id, "up", { uptime: { day: 0.9876, week: 0.9999 } }), 1000);
-		expect(up).toContain("98.76%");
-		expect(up).toContain("24-hour uptime");
+	it("includes the report widget container", () => {
+		const html = renderServicePage(svc, apiService(svc.id, "up"), 1000);
+		expect(html).toContain(`data-report-widget`);
+		expect(html).toContain(`data-service-id="${svc.id}"`);
+	});
+
+	it("links report.css and report.js", () => {
+		const html = renderServicePage(svc, apiService(svc.id, "up"), 1000);
+		expect(html).toContain(`<link rel="stylesheet" href="/report.css" />`);
+		expect(html).toContain(`<script src="/report.js" type="module">`);
+	});
+
+	it("renders the service card with status, heartbeat, and official link", () => {
+		const up = renderServicePage(svc, apiService(svc.id, "up"), 1000);
+		expect(up).toContain("Operational"); // status label in the heartbeat indicator
+		expect(up).toContain("sp-beat--up"); // heartbeat tone class
+		expect(up).toContain(`Official ${svc.name} status page`);
 
 		const unknown = renderServicePage(svc, null, 1000);
-		expect(unknown).not.toContain("24-hour uptime");
 		expect(unknown).toContain("Unknown");
+		expect(unknown).toContain("sp-beat--unknown");
+	});
+
+	it("mounts an empty community-reports card for the client to fill", () => {
+		const html = renderServicePage(svc, apiService(svc.id, "up"), 1000);
+		expect(html).toContain('class="sp-card" data-report-widget');
+	});
+
+	it("includes the map + MapLibre assets only when showMap is true", () => {
+		const withMap = renderServicePage(svc, apiService(svc.id, "up"), 1000, "KEY", true);
+		expect(withMap).toContain('id="sp-map"');
+		expect(withMap).toContain("/lib/maplibre-gl.js");
+
+		const solo = renderServicePage(svc, apiService(svc.id, "up"), 1000, "KEY", false);
+		expect(solo).not.toContain('id="sp-map"');
+		expect(solo).not.toContain("maplibre-gl");
+		expect(solo).toContain("sp-wrap--solo");
+		expect(solo).toContain("/report.js"); // community-reports widget still loads
 	});
 
 	it("escapes untrusted snapshot text", () => {

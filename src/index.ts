@@ -13,6 +13,18 @@
 
 import { persistSnapshot, pruneIncidents, readSnapshot, recentIncidents, type ApiService } from "./db";
 import { findService, renderNotFound, renderServicePage, renderSitemap, renderStatusIndex } from "./pages";
+import {
+	aggregateReports,
+	countryOf,
+	DEDUP_WINDOW_MS,
+	hashIp,
+	insertReports,
+	normalizeReason,
+	pruneReports,
+	readCount,
+	writeCount,
+	type VoteMessage,
+} from "./reports";
 import { SERVICES, type ServiceStatus, type StatusLevel } from "./services";
 import { resolveStatus } from "./sources";
 
@@ -34,10 +46,19 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 
 /**
  * Worker-rendered markup (SSR status pages, sitemap). These responses bypass the
- * static-asset `_headers` file, so set security headers here. The pages ship no
- * scripts (`script-src 'none'`) and only inline CSS (`style-src 'unsafe-inline'`).
+ * static-asset `_headers` file, so set security headers here. Most pages ship no
+ * scripts (`script-src 'none'`); pass `allowSelfScripts: true` only for the
+ * service detail page that loads the report widget via `script-src 'self'`.
+ * `allowMap: true` additionally opens connect-src for Protomaps tile/asset fetches
+ * and worker-src blob: for MapLibre GL's web workers.
  */
-function markup(body: string, contentType: string, init: ResponseInit = {}): Response {
+function markup(body: string, contentType: string, init: ResponseInit = {}, opts: { allowSelfScripts?: boolean; allowMap?: boolean } = {}): Response {
+	const scriptSrc = opts.allowSelfScripts ? "'self'" : "'none'";
+	const connectSrc = opts.allowMap
+		? "'self' https://api.protomaps.com https://protomaps.github.io"
+		: "'self'";
+	const workerSrc = opts.allowMap ? "blob:" : "'none'";
+	const imgSrc = opts.allowMap ? "'self' data: blob:" : "'self' data:";
 	return new Response(body, {
 		...init,
 		headers: {
@@ -46,7 +67,7 @@ function markup(body: string, contentType: string, init: ResponseInit = {}): Res
 			"x-content-type-options": "nosniff",
 			"referrer-policy": "no-referrer",
 			"content-security-policy":
-				"default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; frame-ancestors 'none'",
+				`default-src 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src ${imgSrc}; connect-src ${connectSrc}; worker-src ${workerSrc}; base-uri 'self'; frame-ancestors 'none'`,
 			...(init.headers ?? {}),
 		},
 	});
@@ -322,17 +343,91 @@ export default {
 
 		if (url.pathname === "/api/incidents") {
 			const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 25));
-			// Cache per-colo keyed by the clamped limit (so arbitrary query strings
-			// don't fragment the cache). Incidents change rarely → ~1 read/min/colo.
+			// Optional per-service filter (used by the detail sheet). Validated against
+			// the catalog so the value is a known id before it reaches the cache key / D1.
+			const serviceId = findService(url.searchParams.get("service") ?? "")?.id;
+			// Cache per-colo keyed by the clamped limit + service (so arbitrary query
+			// strings don't fragment the cache). Incidents change rarely → ~1 read/min/colo.
 			const cache = caches.default;
-			const cacheKey = new Request(new URL(`/api/incidents?limit=${limit}`, url.origin).toString(), { method: "GET" });
+			const cacheKey = new Request(new URL(`/api/incidents?limit=${limit}${serviceId ? `&service=${serviceId}` : ""}`, url.origin).toString(), { method: "GET" });
 			const hit = await cache.match(cacheKey);
 			if (hit) return hit;
 
 			const limited = await rateLimit(request, env);
 			if (limited) return limited;
 
-			const resp = json({ incidents: await recentIncidents(env.DB, limit) });
+			const resp = json({ incidents: await recentIncidents(env.DB, limit, serviceId) });
+			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			return resp;
+		}
+
+		// Community report routes (/api/report/:id).
+		const reportMatch = url.pathname.match(/^\/api\/report\/([a-z0-9-]+)\/?$/);
+		if (reportMatch) {
+			const service = findService(reportMatch[1]);
+			if (!service) return json({ error: "Not found" }, { status: 404 });
+
+			if (request.method === "POST") {
+				// Tighter rate limit for the vote path to cap queue flooding.
+				const ip = request.headers.get("cf-connecting-ip") ?? "anon";
+				const { success } = await env.VOTE_RATE_LIMITER.limit({ key: ip });
+				if (!success) return json({ error: "Rate limit exceeded" }, { status: 429, headers: { "retry-after": "60", "cache-control": "no-store" } });
+
+				let body: Record<string, unknown> = {};
+				try {
+					body = (await request.json()) as Record<string, unknown>;
+				} catch {
+					/* missing/invalid body → default reason */
+				}
+				// Fail closed: an unsalted IP hash is reversible (the IPv4 space is
+				// tiny), so without a real VOTE_SALT we'd be persisting recoverable
+				// PII. Refuse rather than store it. Production must
+				// `wrangler secret put VOTE_SALT`; local dev sets it in .dev.vars.
+				const salt = env.VOTE_SALT?.trim();
+				if (!salt) {
+					console.error("isUpMap: VOTE_SALT is not configured — refusing to record report (would store a reversible IP hash).");
+					return json({ error: "Reporting temporarily unavailable" }, { status: 503, headers: { "retry-after": "3600", "cache-control": "no-store" } });
+				}
+
+				const reason = normalizeReason(body.reason);
+				const country = countryOf(request);
+				const ts = Date.now();
+				const ipHash = await hashIp(ip, salt);
+
+				// Server-side dedup mirroring the D1 PK (service, ip_hash, bucket):
+				// the INSERT OR IGNORE already drops duplicates, but a KV marker keyed
+				// the same way stops a single-IP repeat flood from filling the queue
+				// (and the consumer's D1 work) with rows that would only be discarded.
+				const bucket = Math.floor(ts / DEDUP_WINDOW_MS);
+				const dedupKey = `votedip:${service.id}:${ipHash}:${bucket}`;
+				if (!(await env.SNAPSHOT_KV.get(dedupKey))) {
+					const msg: VoteMessage = { serviceId: service.id, country, ipHash, reason, ts };
+					await env.VOTE_QUEUE.send(msg);
+					// Marker lives one dedup window; KV is best-effort, so a rare racing
+					// double-submit still falls back to the D1 PK for correctness.
+					await env.SNAPSHOT_KV.put(dedupKey, "1", { expirationTtl: DEDUP_WINDOW_MS / 1000 });
+				}
+
+				// Return the current (possibly stale) count so the UI can show it immediately.
+				const current = (await readCount(env.SNAPSHOT_KV, service.id)) ?? { windowMs: 0, total: 0, countries: [], reasons: [], recent: [], timeline: [] };
+				return json({ ok: true, report: current }, { status: 202, headers: { "cache-control": "no-store" } });
+			}
+
+			// GET: read-through KV → D1, fronted by the per-colo cache + rate limit
+			// like the other read endpoints. A short edge TTL collapses repeat polls
+			// onto one KV read; the queue consumer refreshes KV on each vote batch.
+			const cache = caches.default;
+			const cacheKey = new Request(new URL(`/api/report/${service.id}`, url.origin).toString(), { method: "GET" });
+			const hit = await cache.match(cacheKey);
+			if (hit) return hit;
+
+			const limited = await rateLimit(request, env);
+			if (limited) return limited;
+
+			const cached = await readCount(env.SNAPSHOT_KV, service.id);
+			const report = cached ?? (await aggregateReports(env.REPORTS_DB, service.id));
+			if (!cached) await writeCount(env.SNAPSHOT_KV, service.id, report);
+			const resp = json(report, { headers: { "cache-control": "public, max-age=30" } });
 			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;
 		}
@@ -363,7 +458,22 @@ export default {
 
 			const { snapshot } = await loadSnapshot(env);
 			const current = snapshot.services.find((s) => s.id === service.id) ?? null;
-			const resp = markup(renderServicePage(service, current, snapshot.updatedAt), "text/html; charset=utf-8");
+			// The world map only plots community reports, so skip it (and the heavy
+			// MapLibre/Protomaps download) when this service has none. KV-first with a
+			// D1 fallback — the cached count has a 10-min TTL, so a KV miss does NOT
+			// mean zero reports; fall back to D1 (and warm KV) like GET /api/report.
+			let reportSummary = await readCount(env.SNAPSHOT_KV, service.id);
+			if (!reportSummary) {
+				reportSummary = await aggregateReports(env.REPORTS_DB, service.id);
+				ctx.waitUntil(writeCount(env.SNAPSHOT_KV, service.id, reportSummary));
+			}
+			const showMap = reportSummary.total > 0 && Boolean(env.PROTOMAPS_KEY);
+			const resp = markup(
+				renderServicePage(service, current, snapshot.updatedAt, env.PROTOMAPS_KEY ?? "", showMap),
+				"text/html; charset=utf-8",
+				{},
+				{ allowSelfScripts: true, allowMap: showMap },
+			);
 			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;
 		}
@@ -380,14 +490,33 @@ export default {
 			// :00 firing of hour 3 falls in this window, so it runs exactly once.
 			const when = new Date(controller.scheduledTime);
 			if (when.getUTCHours() === 3 && when.getUTCMinutes() < 5) {
-				const pruned = await pruneIncidents(env.DB);
-				console.log(`isUpMap cron: persisted ${count} services; pruned ${pruned} old incidents`);
+				const [pruned, prunedReports] = await Promise.all([pruneIncidents(env.DB), pruneReports(env.REPORTS_DB)]);
+				console.log(`isUpMap cron: persisted ${count} services; pruned ${pruned} old incidents, ${prunedReports} old reports`);
 			} else {
 				console.log(`isUpMap cron: persisted ${count} services`);
 			}
 		} catch (err) {
 			console.error("isUpMap cron failed:", err instanceof Error ? err.stack || err.message : String(err));
 			throw err;
+		}
+	},
+
+	async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
+		const rows = (batch.messages as Message<VoteMessage>[]).map((m) => m.body);
+		try {
+			await insertReports(env.REPORTS_DB, rows);
+			// Refresh the KV count for every service touched in this batch so reads
+			// reflect the newly-flushed votes quickly (within the KV TTL).
+			const touched = [...new Set(rows.map((r) => r.serviceId))];
+			await Promise.all(
+				touched.map(async (serviceId) => {
+					const report = await aggregateReports(env.REPORTS_DB, serviceId);
+					await writeCount(env.SNAPSHOT_KV, serviceId, report);
+				}),
+			);
+		} catch (err) {
+			console.error("isUpMap queue consumer failed:", err instanceof Error ? err.stack || err.message : String(err));
+			batch.retryAll();
 		}
 	},
 } satisfies ExportedHandler<Env>;

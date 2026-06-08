@@ -10,6 +10,9 @@ export default defineConfig({
 			wrangler: { configPath: "./wrangler.jsonc" },
 			miniflare: {
 				compatibilityFlags: ["nodejs_compat"],
+				// wrangler.jsonc ships VOTE_SALT="" (public default); the report
+				// write path fails closed on an empty salt, so give tests a real one.
+				bindings: { VOTE_SALT: "test-salt" },
 			},
 		}),
 	],

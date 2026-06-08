@@ -54,7 +54,6 @@ const gridEl = document.getElementById("grid");
 const updatedEl = document.getElementById("updatedText");
 const updatedBoxEl = document.getElementById("updated");
 const toastsEl = document.getElementById("toasts");
-const tooltipEl = document.getElementById("tooltip");
 
 /** Previous status per service id, used to detect changes. Null until first load. */
 let previous = null;
@@ -358,124 +357,6 @@ function setBox(el, x, y, w, h, inset) {
 function clamp(v, lo, hi) {
 	return Math.min(hi, Math.max(lo, v));
 }
-
-// --- Hover card -----------------------------------------------------------
-
-function formatPct(frac) {
-	if (typeof frac !== "number") return "—";
-	const pct = frac * 100;
-	// Avoid rounding 99.97% up to a misleading "100%".
-	if (pct >= 99.995) return "100%";
-	return `${pct.toFixed(pct >= 99.9 ? 2 : 1)}%`;
-}
-
-function relativeTime(iso) {
-	if (!iso) return "";
-	const then = typeof iso === "number" ? iso : Date.parse(iso);
-	if (Number.isNaN(then)) return "";
-	const diff = Date.now() - then;
-	const mins = Math.round(diff / 60000);
-	if (mins < 1) return "just now";
-	if (mins < 60) return `${mins}m ago`;
-	const hrs = Math.round(mins / 60);
-	if (hrs < 24) return `${hrs}h ago`;
-	return `${Math.round(hrs / 24)}d ago`;
-}
-
-function buildTooltip(svc) {
-	const d = svc.details ?? {};
-	const rows = [];
-
-	rows.push(`<div class="tooltip__head">
-		<span class="dot is-${svc.status}"></span>
-		<span class="tooltip__name">${escapeHtml(svc.name)}</span>
-		<span class="tooltip__badge is-${svc.status}">${STATUS_LABEL[svc.status]}</span>
-	</div>`);
-
-	if (svc.description) rows.push(`<div class="tooltip__desc">${escapeHtml(svc.description)}</div>`);
-
-	if (svc.uptime) {
-		rows.push(`<div class="tooltip__row"><span>Uptime</span><strong>24h ${formatPct(svc.uptime.day)} · 7d ${formatPct(svc.uptime.week)}</strong></div>`);
-	}
-
-	if (d.components && d.components.total > 0) {
-		const c = d.components;
-		rows.push(`<div class="tooltip__row"><span>Components</span><strong>${c.operational}/${c.total} operational</strong></div>`);
-		if (c.impacted.length) {
-			rows.push(`<div class="tooltip__impacted">${c.impacted.slice(0, 6).map(escapeHtml).join(" · ")}${c.impacted.length > 6 ? " …" : ""}</div>`);
-		}
-	}
-
-	if (d.incident) {
-		const rel = relativeTime(d.incident.updatedAt);
-		rows.push(`<div class="tooltip__incident">
-			⚠ ${escapeHtml(d.incident.name)}${d.incident.impact ? ` <em>(${escapeHtml(d.incident.impact)})</em>` : ""}${rel ? ` · ${rel}` : ""}
-		</div>`);
-	}
-
-	if (d.note) rows.push(`<div class="tooltip__row tooltip__note">${escapeHtml(d.note)}</div>`);
-
-	if (d.updatedAt && !d.incident) {
-		const rel = relativeTime(d.updatedAt);
-		if (rel) rows.push(`<div class="tooltip__row"><span>Updated</span><strong>${rel}</strong></div>`);
-	}
-
-	if (d.url) {
-		try {
-			rows.push(`<div class="tooltip__link">${escapeHtml(new URL(d.url).host)}</div>`);
-		} catch {
-			/* ignore malformed url */
-		}
-	}
-
-	return rows.join("");
-}
-
-function showTooltip(svc, clientX, clientY) {
-	tooltipEl.innerHTML = buildTooltip(svc);
-	tooltipEl.hidden = false;
-	positionTooltip(clientX, clientY);
-}
-
-function positionTooltip(clientX, clientY) {
-	const pad = 14;
-	const rect = tooltipEl.getBoundingClientRect();
-	let x = clientX + pad;
-	let y = clientY + pad;
-	if (x + rect.width > window.innerWidth - 8) x = clientX - rect.width - pad;
-	if (y + rect.height > window.innerHeight - 8) y = clientY - rect.height - pad;
-	tooltipEl.style.left = `${Math.max(8, x)}px`;
-	tooltipEl.style.top = `${Math.max(8, y)}px`;
-}
-
-function hideTooltip() {
-	tooltipEl.hidden = true;
-}
-
-// Hover tooltips only on hover-capable devices; touch devices tap a tile to
-// open the detail sheet instead (no hover state to rely on).
-const canHover = window.matchMedia?.("(hover: hover) and (pointer: fine)").matches ?? true;
-
-// Delegated hover handling on the grid (tiles are recreated every poll).
-gridEl.addEventListener("mousemove", (e) => {
-	if (!canHover) return;
-	const tile = e.target.closest(".tile");
-	if (tile && tile._svc) {
-		if (tooltipEl.hidden || tooltipEl._for !== tile._svc.id) {
-			showTooltip(tile._svc, e.clientX, e.clientY);
-			tooltipEl._for = tile._svc.id;
-		} else {
-			positionTooltip(e.clientX, e.clientY);
-		}
-	} else {
-		hideTooltip();
-		tooltipEl._for = null;
-	}
-});
-gridEl.addEventListener("mouseleave", () => {
-	hideTooltip();
-	tooltipEl._for = null;
-});
 
 // --- Change detection / toasts -------------------------------------------
 
@@ -1196,82 +1077,105 @@ async function openDetail(svc) {
 	detailEl.hidden = false;
 	setUrlParam("service", svc.id);
 	renderDetailHeader(svc);
-	// Incident history for this service (client-side filter of the recent log).
-	detailBody.querySelector(".detail__incidents").innerHTML = `<p class="panel__empty">Loading history…</p>`;
+	// Mount the report widget if the module has loaded.
+	const widgetEl = detailBody.querySelector("[data-report-widget]");
+	if (widgetEl && window.isupReport) {
+		window.isupReport.mount(widgetEl, svc.id, { status: svc.status });
+	}
+	// Incident history for this service: the 2 most recent, queried per-service.
+	// The whole section stays hidden unless there's at least one incident (no
+	// flash while loading, no empty-state filler).
+	const historyEl = detailBody.querySelector(".detail__history");
 	try {
-		const res = await fetch("/api/incidents?limit=100", { cache: "no-store", headers: { accept: "application/json" } });
+		const res = await fetch(`/api/incidents?service=${encodeURIComponent(svc.id)}&limit=2`, { cache: "no-store", headers: { accept: "application/json" } });
 		const { incidents } = await res.json();
-		const mine = incidents.filter((i) => i.serviceId === svc.id);
-		renderDetailIncidents(mine);
+		// Guard against a slow response after the user reopened a different service.
+		if (detailId !== svc.id) return;
+		if (incidents && incidents.length) {
+			renderDetailIncidents(incidents);
+			historyEl.hidden = false;
+		}
 	} catch {
-		detailBody.querySelector(".detail__incidents").innerHTML = `<p class="panel__empty">Couldn't load history.</p>`;
+		/* leave the section hidden on error — nothing to show */
 	}
 }
 
+// CSS variable name per status — used for the tinted service card (--ds).
+const DETAIL_STATUS_VAR = {
+	up: "var(--up-hi)",
+	degraded: "var(--degraded-hi)",
+	down: "var(--down-hi)",
+	unknown: "var(--muted)",
+};
+
 function renderDetailHeader(svc) {
 	const d = svc.details ?? {};
-	const up = svc.uptime ?? {};
+	const statusVar = DETAIL_STATUS_VAR[svc.status] ?? "var(--muted)";
+
+	// Note shown inside the card: prefer the active incident name, fall back to description.
+	const noteText = d.incident
+		? `⚠ ${d.incident.name}${d.incident.impact ? ` · ${d.incident.impact}` : ""}`
+		: svc.description ?? "";
+	const noteHtml = noteText ? `<p class="detail__svc-note">${escapeHtml(noteText)}</p>` : "";
+
+	// Official status page link inside the card, with the host shown muted below.
 	let host = "";
 	try {
 		if (d.url) host = new URL(d.url).host;
 	} catch {
-		/* ignore */
+		/* ignore malformed url */
 	}
+	const extLinkHtml = d.url
+		? `<hr class="detail__rule" /><a class="detail__svc-ext" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer">
+			<span class="detail__svc-ext-main">
+				<span>Official ${escapeHtml(svc.name)} status page</span>
+				${host ? `<span class="detail__svc-ext-host">${escapeHtml(host)}</span>` : ""}
+			</span>
+			<span class="detail__svc-ext-arrow" aria-hidden="true">↗</span>
+		</a>`
+		: "";
+
 	detailBody.innerHTML = `
-		<div class="detail__head">
-			<span class="detail__logo" id="detailLogo"></span>
-			<div class="detail__head-body">
-				<div class="detail__name-row">
-					<h2 class="detail__name">${escapeHtml(svc.name)}</h2>
-					<span class="detail__badge is-${svc.status}">${STATUS_LABEL[svc.status]}</span>
+		<p class="detail__question">Is ${escapeHtml(svc.name)} down?</p>
+		<div class="detail__svc-card" style="--ds:${statusVar}">
+			<div class="detail__svc">
+				<span class="detail__logo" id="detailLogo"></span>
+				<div class="detail__svc-main">
+					<div class="detail__svc-top">
+						<span class="detail__svc-name">${escapeHtml(svc.name)}</span>
+						<span class="detail__beat detail__beat--${svc.status}">
+							<span class="detail__beat-label">${STATUS_LABEL[svc.status]}</span>
+							<span class="detail__beat-dot" aria-hidden="true"></span>
+						</span>
+					</div>
+					<div class="detail__svc-cat">${escapeHtml(svc.category)}</div>
 				</div>
-				${svc.description ? `<p class="detail__desc">${escapeHtml(svc.description)}</p>` : ""}
 			</div>
+			${noteHtml}
+			${extLinkHtml}
 		</div>
-		<div class="detail__metrics">
-			<div class="detail__metric">
-				<span class="detail__metric-label">Uptime 24h</span>
-				<strong class="detail__metric-value">${formatPct(up.day)}</strong>
+		<div class="detail__report-card">
+			<div data-report-widget data-service-id="${escapeHtml(svc.id)}"></div>
+		</div>
+		<section class="detail__history" hidden>
+			<div class="detail__section-head">
+				<h3 class="detail__subhead">Incident history</h3>
 			</div>
-			<div class="detail__metric">
-				<span class="detail__metric-label">Uptime 7d</span>
-				<strong class="detail__metric-value">${formatPct(up.week)}</strong>
-			</div>
-			${d.components && d.components.total ? `<div class="detail__metric"><span class="detail__metric-label">Components</span><strong class="detail__metric-value">${d.components.operational}/${d.components.total}</strong></div>` : ""}
-		</div>
-		<div class="detail__actions">
-			${d.url ? `<a class="detail__visit" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link"></i> Visit status page</a>` : ""}
-			<button id="detailCopy" class="detail__copy-btn" type="button"><i data-lucide="link-2"></i> <span id="detailCopyLabel">Copy link</span></button>
-		</div>
-		${host ? `<p class="detail__host">${escapeHtml(host)}</p>` : ""}
-		<div class="detail__section-head">
-			<h3 class="detail__subhead">Incident history</h3>
-		</div>
-		<div class="detail__incidents"></div>`;
-	// Set the logo via CSSOM (avoids inline style attributes under our CSP).
+			<div class="detail__incidents"></div>
+		</section>`;
+
+	// Set logo via CSSOM (avoids inline style= under our CSP).
 	const logoEl = detailBody.querySelector("#detailLogo");
 	const lurl = logoUrl(svc.id);
 	if (lurl) logoEl.style.backgroundImage = `url("${lurl}")`;
 	else logoEl.remove();
+
 	// Tint the modal top border to reflect service status.
 	detailEl.querySelector(".modal__box").className = `modal__box is-${svc.status}`;
+
 	// Render Lucide icons injected by the template.
 	const newIcons = [...detailBody.querySelectorAll("i[data-lucide]")];
 	if (newIcons.length) lucide.createIcons({ nodes: newIcons });
-	detailBody.querySelector("#detailCopy").addEventListener("click", () => {
-		const link = `${location.origin}/?service=${encodeURIComponent(svc.id)}`;
-		navigator.clipboard?.writeText(link).then(
-			() => {
-				const label = detailBody.querySelector("#detailCopyLabel");
-				if (label) label.textContent = "Copied!";
-				setTimeout(() => {
-					const l = detailBody.querySelector("#detailCopyLabel");
-					if (l) l.textContent = "Copy link";
-				}, 1500);
-			},
-			() => {},
-		);
-	});
 }
 
 function renderDetailIncidents(incidents) {
