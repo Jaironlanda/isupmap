@@ -1097,6 +1097,7 @@ body {
 	text-align: center;
 	line-height: 1.05;
 	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+	cursor: pointer;
 }
 
 .tile.is-up {
@@ -1182,129 +1183,6 @@ body {
 	opacity: 0.9;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-}
-
-/* --- Hover card --- */
-.tooltip {
-	position: fixed;
-	z-index: 60;
-	max-width: 320px;
-	padding: 0.6rem 0.7rem;
-	background: var(--panel);
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-	color: var(--text);
-	font-size: 0.8rem;
-	line-height: 1.4;
-	pointer-events: none;
-	backdrop-filter: blur(2px);
-}
-
-.tooltip[hidden] {
-	display: none;
-}
-
-.tooltip__head {
-	display: flex;
-	align-items: center;
-	gap: 0.4rem;
-	margin-bottom: 0.3rem;
-}
-
-.tooltip .dot {
-	width: 0.6rem;
-	height: 0.6rem;
-	border-radius: 50%;
-	flex: 0 0 auto;
-}
-.tooltip .dot.is-up {
-	background: var(--up-hi);
-}
-.tooltip .dot.is-degraded {
-	background: var(--degraded-hi);
-}
-.tooltip .dot.is-down {
-	background: var(--down-hi);
-}
-.tooltip .dot.is-unknown {
-	background: var(--unknown);
-}
-
-.tooltip__name {
-	font-weight: 700;
-	font-size: 0.92rem;
-}
-
-.tooltip__badge {
-	margin-left: auto;
-	font-size: 0.62rem;
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	padding: 0.1rem 0.4rem;
-	border-radius: 999px;
-	color: #fff;
-}
-.tooltip__badge.is-up {
-	background: var(--up);
-}
-.tooltip__badge.is-degraded {
-	background: var(--degraded);
-}
-.tooltip__badge.is-down {
-	background: var(--down);
-}
-.tooltip__badge.is-unknown {
-	background: var(--unknown);
-}
-
-.tooltip__desc {
-	color: var(--text);
-	margin-bottom: 0.35rem;
-}
-
-.tooltip__row {
-	display: flex;
-	justify-content: space-between;
-	gap: 1rem;
-	color: var(--muted);
-}
-.tooltip__row strong {
-	color: var(--text);
-	font-weight: 600;
-}
-
-.tooltip__impacted {
-	margin: 0.15rem 0 0.35rem;
-	color: var(--degraded-hi);
-	font-size: 0.75rem;
-}
-
-.tooltip__incident {
-	margin: 0.3rem 0;
-	padding: 0.35rem 0.45rem;
-	background: rgba(250, 82, 82, 0.12);
-	border-left: 3px solid var(--down-hi);
-	border-radius: 3px;
-	color: var(--text);
-	font-size: 0.76rem;
-}
-.tooltip__incident em {
-	color: var(--muted);
-	font-style: normal;
-}
-
-.tooltip__note {
-	color: var(--muted);
-}
-
-.tooltip__link {
-	margin-top: 0.4rem;
-	padding-top: 0.35rem;
-	border-top: 1px solid var(--border);
-	color: var(--muted);
-	font-size: 0.72rem;
 }
 
 /* --- Toasts --- */

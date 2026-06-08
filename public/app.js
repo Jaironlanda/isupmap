@@ -54,7 +54,6 @@ const gridEl = document.getElementById("grid");
 const updatedEl = document.getElementById("updatedText");
 const updatedBoxEl = document.getElementById("updated");
 const toastsEl = document.getElementById("toasts");
-const tooltipEl = document.getElementById("tooltip");
 
 /** Previous status per service id, used to detect changes. Null until first load. */
 let previous = null;
@@ -358,124 +357,6 @@ function setBox(el, x, y, w, h, inset) {
 function clamp(v, lo, hi) {
 	return Math.min(hi, Math.max(lo, v));
 }
-
-// --- Hover card -----------------------------------------------------------
-
-function formatPct(frac) {
-	if (typeof frac !== "number") return "—";
-	const pct = frac * 100;
-	// Avoid rounding 99.97% up to a misleading "100%".
-	if (pct >= 99.995) return "100%";
-	return `${pct.toFixed(pct >= 99.9 ? 2 : 1)}%`;
-}
-
-function relativeTime(iso) {
-	if (!iso) return "";
-	const then = typeof iso === "number" ? iso : Date.parse(iso);
-	if (Number.isNaN(then)) return "";
-	const diff = Date.now() - then;
-	const mins = Math.round(diff / 60000);
-	if (mins < 1) return "just now";
-	if (mins < 60) return `${mins}m ago`;
-	const hrs = Math.round(mins / 60);
-	if (hrs < 24) return `${hrs}h ago`;
-	return `${Math.round(hrs / 24)}d ago`;
-}
-
-function buildTooltip(svc) {
-	const d = svc.details ?? {};
-	const rows = [];
-
-	rows.push(`<div class="tooltip__head">
-		<span class="dot is-${svc.status}"></span>
-		<span class="tooltip__name">${escapeHtml(svc.name)}</span>
-		<span class="tooltip__badge is-${svc.status}">${STATUS_LABEL[svc.status]}</span>
-	</div>`);
-
-	if (svc.description) rows.push(`<div class="tooltip__desc">${escapeHtml(svc.description)}</div>`);
-
-	if (svc.uptime) {
-		rows.push(`<div class="tooltip__row"><span>Uptime</span><strong>24h ${formatPct(svc.uptime.day)} · 7d ${formatPct(svc.uptime.week)}</strong></div>`);
-	}
-
-	if (d.components && d.components.total > 0) {
-		const c = d.components;
-		rows.push(`<div class="tooltip__row"><span>Components</span><strong>${c.operational}/${c.total} operational</strong></div>`);
-		if (c.impacted.length) {
-			rows.push(`<div class="tooltip__impacted">${c.impacted.slice(0, 6).map(escapeHtml).join(" · ")}${c.impacted.length > 6 ? " …" : ""}</div>`);
-		}
-	}
-
-	if (d.incident) {
-		const rel = relativeTime(d.incident.updatedAt);
-		rows.push(`<div class="tooltip__incident">
-			⚠ ${escapeHtml(d.incident.name)}${d.incident.impact ? ` <em>(${escapeHtml(d.incident.impact)})</em>` : ""}${rel ? ` · ${rel}` : ""}
-		</div>`);
-	}
-
-	if (d.note) rows.push(`<div class="tooltip__row tooltip__note">${escapeHtml(d.note)}</div>`);
-
-	if (d.updatedAt && !d.incident) {
-		const rel = relativeTime(d.updatedAt);
-		if (rel) rows.push(`<div class="tooltip__row"><span>Updated</span><strong>${rel}</strong></div>`);
-	}
-
-	if (d.url) {
-		try {
-			rows.push(`<div class="tooltip__link">${escapeHtml(new URL(d.url).host)}</div>`);
-		} catch {
-			/* ignore malformed url */
-		}
-	}
-
-	return rows.join("");
-}
-
-function showTooltip(svc, clientX, clientY) {
-	tooltipEl.innerHTML = buildTooltip(svc);
-	tooltipEl.hidden = false;
-	positionTooltip(clientX, clientY);
-}
-
-function positionTooltip(clientX, clientY) {
-	const pad = 14;
-	const rect = tooltipEl.getBoundingClientRect();
-	let x = clientX + pad;
-	let y = clientY + pad;
-	if (x + rect.width > window.innerWidth - 8) x = clientX - rect.width - pad;
-	if (y + rect.height > window.innerHeight - 8) y = clientY - rect.height - pad;
-	tooltipEl.style.left = `${Math.max(8, x)}px`;
-	tooltipEl.style.top = `${Math.max(8, y)}px`;
-}
-
-function hideTooltip() {
-	tooltipEl.hidden = true;
-}
-
-// Hover tooltips only on hover-capable devices; touch devices tap a tile to
-// open the detail sheet instead (no hover state to rely on).
-const canHover = window.matchMedia?.("(hover: hover) and (pointer: fine)").matches ?? true;
-
-// Delegated hover handling on the grid (tiles are recreated every poll).
-gridEl.addEventListener("mousemove", (e) => {
-	if (!canHover) return;
-	const tile = e.target.closest(".tile");
-	if (tile && tile._svc) {
-		if (tooltipEl.hidden || tooltipEl._for !== tile._svc.id) {
-			showTooltip(tile._svc, e.clientX, e.clientY);
-			tooltipEl._for = tile._svc.id;
-		} else {
-			positionTooltip(e.clientX, e.clientY);
-		}
-	} else {
-		hideTooltip();
-		tooltipEl._for = null;
-	}
-});
-gridEl.addEventListener("mouseleave", () => {
-	hideTooltip();
-	tooltipEl._for = null;
-});
 
 // --- Change detection / toasts -------------------------------------------
 
