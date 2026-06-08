@@ -1186,6 +1186,86 @@ body {
 }
 
 /* --- Toasts --- */
+/* --- Phone-only "best on desktop" notice --- */
+.mobile-notice {
+	position: fixed;
+	inset: 0;
+	z-index: 95;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1.25rem;
+	background: rgba(0, 0, 0, 0.6);
+	animation: fade-in 0.18s ease;
+}
+.mobile-notice[hidden] {
+	display: none;
+}
+/* Only ever relevant on small screens; never show on tablet/desktop. */
+@media (min-width: 641px) {
+	.mobile-notice {
+		display: none !important;
+	}
+}
+.mobile-notice__box {
+	width: 100%;
+	max-width: 360px;
+	background: var(--panel);
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	padding: 1.5rem 1.4rem;
+	text-align: center;
+	box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+	animation: sheet-up 0.22s ease;
+}
+.mobile-notice__icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	height: 48px;
+	margin-bottom: 0.9rem;
+	border-radius: 12px;
+	background: rgba(127, 127, 127, 0.1);
+	color: var(--text);
+}
+.mobile-notice__icon svg,
+.mobile-notice__icon i[data-lucide] {
+	width: 24px;
+	height: 24px;
+}
+.mobile-notice__title {
+	margin: 0 0 0.5rem;
+	font-size: 1.1rem;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+}
+.mobile-notice__text {
+	margin: 0 0 1.25rem;
+	font-size: 0.85rem;
+	line-height: 1.5;
+	color: var(--muted);
+}
+.mobile-notice__btn {
+	width: 100%;
+	padding: 0.7rem 1rem;
+	border: none;
+	border-radius: 8px;
+	background: var(--up-hi);
+	color: #07210f;
+	font-size: 0.9rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+.mobile-notice__btn:hover {
+	filter: brightness(1.05);
+}
+
+@keyframes fade-in {
+	from { opacity: 0; }
+	to   { opacity: 1; }
+}
+
 .toasts {
 	position: fixed;
 	right: 1rem;

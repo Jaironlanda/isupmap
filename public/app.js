@@ -741,6 +741,39 @@ sidebarClose.addEventListener("click", () => closeSidebar());
 sidebarOverlay.addEventListener("click", () => closeSidebar());
 phoneMq.addEventListener("change", relocateChrome);
 
+// --- Phone-only "best on desktop" notice ----------------------------------
+// Shown once per browser on small screens; dismissal is remembered so we
+// don't nag on every visit.
+const MOBILE_NOTICE_KEY = "isupmap:mobileNoticeSeen";
+const mobileNotice = document.getElementById("mobileNotice");
+const mobileNoticeDismiss = document.getElementById("mobileNoticeDismiss");
+
+function dismissMobileNotice() {
+	if (!mobileNotice) return;
+	mobileNotice.hidden = true;
+	try {
+		localStorage.setItem(MOBILE_NOTICE_KEY, "1");
+	} catch {
+		/* storage unavailable (private mode); we'll just show it again next time */
+	}
+}
+
+function maybeShowMobileNotice() {
+	if (!mobileNotice || !phoneMq.matches) return;
+	let seen = false;
+	try {
+		seen = localStorage.getItem(MOBILE_NOTICE_KEY) === "1";
+	} catch {
+		/* storage unavailable; treat as not seen */
+	}
+	if (!seen) mobileNotice.hidden = false;
+}
+
+mobileNoticeDismiss?.addEventListener("click", dismissMobileNotice);
+mobileNotice?.addEventListener("click", (e) => {
+	if (e.target === mobileNotice) dismissMobileNotice(); // tap the backdrop to dismiss
+});
+
 // --- Problems-only filter -------------------------------------------------
 
 const problemsBtn = document.getElementById("problemsBtn");
@@ -1274,6 +1307,7 @@ window.addEventListener("resize", () => {
 
 lucide.createIcons();
 relocateChrome();
+maybeShowMobileNotice();
 applyTheme();
 syncProblemsBtn();
 syncNotifyToggle();
