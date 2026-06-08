@@ -326,6 +326,22 @@
 			</div>
 		</div>
 
+		<!-- Phone-only one-time notice: the treemap is denser/easier on a wider screen.
+		     Shown once per browser on small screens; dismissal is remembered in localStorage. -->
+		<div id="mobileNotice" class="mobile-notice" hidden>
+			<div class="mobile-notice__box" role="dialog" aria-modal="true" aria-labelledby="mobileNoticeTitle">
+				<div class="mobile-notice__icon" aria-hidden="true">
+					<i data-lucide="monitor"></i>
+				</div>
+				<h2 id="mobileNoticeTitle" class="mobile-notice__title">Best viewed on desktop</h2>
+				<p class="mobile-notice__text">
+					isUpMap packs 90+ services into a live heatmap. It works on phones, but
+					a wider screen shows the full map and incident details far more comfortably.
+				</p>
+				<button id="mobileNoticeDismiss" class="mobile-notice__btn" type="button">Got it</button>
+			</div>
+		</div>
+
 		<div id="toasts" class="toasts" aria-live="assertive" aria-atomic="false"></div>
 
 		<footer class="site-footer">

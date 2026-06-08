@@ -279,7 +279,10 @@
     overflow: visible;
   }
 
-  html, body {
+  /* Only relax html/body sizing on the report page (which has .sp-wrap).
+     report.css is also loaded on the home page, where body must stay
+     `height:100dvh; overflow:hidden` so the flex:1 treemap fills the screen. */
+  html:has(.sp-wrap), body:has(.sp-wrap) {
     height: auto !important;
     overflow: visible !important;
   }
