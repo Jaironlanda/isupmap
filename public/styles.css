@@ -1422,13 +1422,6 @@ body {
 		border-radius: 2px;
 		background: var(--border);
 	}
-	.detail__actions {
-		flex-direction: column;
-	}
-	.detail__visit,
-	.detail__copy-btn {
-		justify-content: center;
-	}
 }
 
 @keyframes sheet-up {
@@ -1565,17 +1558,38 @@ body {
 	background: rgba(127, 127, 127, 0.12);
 }
 
-.detail__head {
+/* --- Service detail — reworked to match /status/:id concept design --- */
+
+.detail__question {
+	margin: 0;
+	padding: 1rem 1.3rem 0.7rem;
+	font-size: 1.1rem;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+	line-height: 1.2;
+}
+
+/* Status-tinted service identity card. --ds is set inline per-service. */
+.detail__svc-card {
+	margin: 0 0.9rem 0.6rem;
+	padding: 14px;
+	border: 1px solid color-mix(in srgb, var(--ds, var(--border)) 32%, var(--border));
+	border-radius: 12px;
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--ds, transparent) 9%, transparent), transparent 60px),
+		rgba(127, 127, 127, 0.03);
+}
+
+.detail__svc {
 	display: flex;
-	align-items: flex-start;
-	gap: 0.9rem;
-	padding: 1.1rem 3rem 1rem 1.3rem;
+	align-items: center;
+	gap: 11px;
 }
 
 .detail__logo {
 	flex: 0 0 auto;
-	width: 44px;
-	height: 44px;
+	width: 40px;
+	height: 40px;
 	border-radius: 9px;
 	background-color: #fff;
 	background-repeat: no-repeat;
@@ -1584,127 +1598,125 @@ body {
 	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
-.detail__head-body {
+.detail__svc-main {
 	flex: 1;
 	min-width: 0;
 }
 
-.detail__name-row {
+.detail__svc-top {
 	display: flex;
 	align-items: center;
-	gap: 0.5rem;
-	flex-wrap: wrap;
-	margin-bottom: 0.2rem;
+	justify-content: space-between;
+	gap: 10px;
 }
 
-.detail__name {
-	margin: 0;
-	font-size: 1.15rem;
+.detail__svc-name {
+	min-width: 0;
+	font-size: 1rem;
 	font-weight: 700;
-}
-
-.detail__badge {
-	font-size: 0.6rem;
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	padding: 0.1rem 0.45rem;
-	border-radius: 999px;
-	color: #fff;
-}
-.detail__badge.is-up       { background: var(--up); }
-.detail__badge.is-degraded { background: var(--degraded); }
-.detail__badge.is-down     { background: var(--down); }
-.detail__badge.is-unknown  { background: var(--unknown); }
-
-.detail__desc {
-	margin: 0;
-	color: var(--muted);
-	font-size: 0.83rem;
-	line-height: 1.4;
-}
-
-.detail__metrics {
-	display: flex;
-	border-top: 1px solid var(--border);
-	border-bottom: 1px solid var(--border);
-}
-
-.detail__metric {
-	flex: 1;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	padding: 0.7rem 0.5rem;
-	text-align: center;
-	border-right: 1px solid var(--border);
-}
-.detail__metric:last-child { border-right: none; }
-
-.detail__metric-label {
-	font-size: 0.62rem;
-	text-transform: uppercase;
-	letter-spacing: 0.06em;
-	color: var(--muted);
-	margin-bottom: 0.2rem;
+	letter-spacing: -0.01em;
 	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
-.detail__metric-value {
-	font-size: 1.1rem;
-	font-variant-numeric: tabular-nums;
-	font-weight: 700;
-}
-
-.detail__actions {
-	display: flex;
-	gap: 0.5rem;
-	padding: 0.85rem 1.3rem;
-}
-
-.detail__visit {
-	flex: 1;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.4rem;
-	background: rgba(127, 127, 127, 0.08);
-	border: 1px solid var(--border);
-	border-radius: 7px;
-	padding: 0.5rem 0.9rem;
-	color: var(--text);
-	text-decoration: none;
-	font-size: 0.85rem;
-	font-weight: 600;
-	white-space: nowrap;
-	transition: background 0.12s, border-color 0.12s;
-}
-.detail__visit svg { width: 14px; height: 14px; flex: 0 0 auto; stroke-width: 2; }
-.detail__visit:hover { background: rgba(127, 127, 127, 0.15); border-color: var(--muted); }
-
-.detail__copy-btn {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.35rem;
-	background: none;
-	border: 1px solid var(--border);
-	border-radius: 7px;
-	padding: 0.5rem 0.8rem;
-	color: var(--muted);
-	font-size: 0.85rem;
-	font-weight: 600;
-	cursor: pointer;
-	white-space: nowrap;
-	transition: color 0.12s, border-color 0.12s;
-}
-.detail__copy-btn svg { width: 14px; height: 14px; flex: 0 0 auto; stroke-width: 2; }
-.detail__copy-btn:hover { color: var(--text); border-color: var(--muted); }
-
-.detail__host {
-	margin: 0;
-	padding: 0 1.3rem 0.75rem;
-	color: var(--muted);
+.detail__svc-cat {
 	font-size: 0.72rem;
+	color: var(--muted);
+	margin-top: 3px;
+}
+
+/* Pulsing heartbeat status indicator */
+.detail__beat {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	flex-shrink: 0;
+	color: var(--ds, var(--muted));
+}
+
+.detail__beat-label {
+	font-size: 0.72rem;
+	font-weight: 600;
+}
+
+.detail__beat-dot {
+	position: relative;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--ds, var(--muted));
+	flex-shrink: 0;
+}
+
+.detail__beat-dot::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	background: var(--ds, var(--muted));
+	animation: detail-beat 1.8s ease-out infinite;
+}
+
+.detail__beat--unknown .detail__beat-dot { opacity: 0.5; }
+.detail__beat--unknown .detail__beat-dot::after { animation: none; }
+.detail__beat--down .detail__beat-dot::after,
+.detail__beat--degraded .detail__beat-dot::after { animation-duration: 1.1s; }
+
+@keyframes detail-beat {
+	0%   { transform: scale(1);   opacity: 0.55; }
+	70%  { transform: scale(2.6); opacity: 0; }
+	100% { transform: scale(2.6); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.detail__beat-dot::after { animation: none; }
+}
+
+/* Description / incident note inside the card */
+.detail__svc-note {
+	font-size: 0.8rem;
+	line-height: 1.45;
+	color: var(--text);
+	opacity: 0.85;
+	margin: 10px 0 0;
+}
+
+/* Hairline divider inside the card */
+.detail__rule {
+	border: 0;
+	border-top: 1px solid var(--border);
+	margin: 12px 0;
+}
+
+/* Official status page link inside the card */
+.detail__svc-ext {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	color: var(--text);
+	font-size: 0.8rem;
+	font-weight: 500;
+	text-decoration: none;
+	transition: color 0.12s;
+}
+.detail__svc-ext:hover { color: var(--text); text-decoration: none; }
+.detail__svc-ext:hover .detail__svc-ext-arrow { transform: translate(2px, -2px); }
+.detail__svc-ext-arrow {
+	color: var(--up-hi);
+	font-size: 13px;
+	flex-shrink: 0;
+	transition: transform 0.12s;
+}
+
+/* Community report widget card */
+.detail__report-card {
+	margin: 0 0.9rem 0.6rem;
+	padding: 14px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: rgba(127, 127, 127, 0.03);
 }
 
 .detail__section-head {

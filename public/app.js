@@ -1213,71 +1213,68 @@ async function openDetail(svc) {
 	}
 }
 
+// CSS variable name per status — used for the tinted service card (--ds).
+const DETAIL_STATUS_VAR = {
+	up: "var(--up-hi)",
+	degraded: "var(--degraded-hi)",
+	down: "var(--down-hi)",
+	unknown: "var(--muted)",
+};
+
 function renderDetailHeader(svc) {
 	const d = svc.details ?? {};
-	const up = svc.uptime ?? {};
-	let host = "";
-	try {
-		if (d.url) host = new URL(d.url).host;
-	} catch {
-		/* ignore */
-	}
+	const statusVar = DETAIL_STATUS_VAR[svc.status] ?? "var(--muted)";
+
+	// Note shown inside the card: prefer the active incident name, fall back to description.
+	const noteText = d.incident
+		? `⚠ ${d.incident.name}${d.incident.impact ? ` · ${d.incident.impact}` : ""}`
+		: svc.description ?? "";
+	const noteHtml = noteText ? `<p class="detail__svc-note">${escapeHtml(noteText)}</p>` : "";
+
+	// Official status page link inside the card.
+	const extLinkHtml = d.url
+		? `<hr class="detail__rule" /><a class="detail__svc-ext" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer"><span>Official ${escapeHtml(svc.name)} status page</span><span class="detail__svc-ext-arrow" aria-hidden="true">↗</span></a>`
+		: "";
+
 	detailBody.innerHTML = `
-		<div class="detail__head">
-			<span class="detail__logo" id="detailLogo"></span>
-			<div class="detail__head-body">
-				<div class="detail__name-row">
-					<h2 class="detail__name">${escapeHtml(svc.name)}</h2>
-					<span class="detail__badge is-${svc.status}">${STATUS_LABEL[svc.status]}</span>
+		<p class="detail__question">Is ${escapeHtml(svc.name)} down?</p>
+		<div class="detail__svc-card" style="--ds:${statusVar}">
+			<div class="detail__svc">
+				<span class="detail__logo" id="detailLogo"></span>
+				<div class="detail__svc-main">
+					<div class="detail__svc-top">
+						<span class="detail__svc-name">${escapeHtml(svc.name)}</span>
+						<span class="detail__beat detail__beat--${svc.status}">
+							<span class="detail__beat-label">${STATUS_LABEL[svc.status]}</span>
+							<span class="detail__beat-dot" aria-hidden="true"></span>
+						</span>
+					</div>
+					<div class="detail__svc-cat">${escapeHtml(svc.category)}</div>
 				</div>
-				${svc.description ? `<p class="detail__desc">${escapeHtml(svc.description)}</p>` : ""}
 			</div>
+			${noteHtml}
+			${extLinkHtml}
 		</div>
-		<div class="detail__metrics">
-			<div class="detail__metric">
-				<span class="detail__metric-label">Uptime 24h</span>
-				<strong class="detail__metric-value">${formatPct(up.day)}</strong>
-			</div>
-			<div class="detail__metric">
-				<span class="detail__metric-label">Uptime 7d</span>
-				<strong class="detail__metric-value">${formatPct(up.week)}</strong>
-			</div>
-			${d.components && d.components.total ? `<div class="detail__metric"><span class="detail__metric-label">Components</span><strong class="detail__metric-value">${d.components.operational}/${d.components.total}</strong></div>` : ""}
+		<div class="detail__report-card">
+			<div data-report-widget data-service-id="${escapeHtml(svc.id)}"></div>
 		</div>
-		<div class="detail__actions">
-			${d.url ? `<a class="detail__visit" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link"></i> Visit status page</a>` : ""}
-			<button id="detailCopy" class="detail__copy-btn" type="button"><i data-lucide="link-2"></i> <span id="detailCopyLabel">Copy link</span></button>
-		</div>
-		${host ? `<p class="detail__host">${escapeHtml(host)}</p>` : ""}
-		<div data-report-widget data-service-id="${escapeHtml(svc.id)}"></div>
 		<div class="detail__section-head">
 			<h3 class="detail__subhead">Incident history</h3>
 		</div>
 		<div class="detail__incidents"></div>`;
-	// Set the logo via CSSOM (avoids inline style attributes under our CSP).
+
+	// Set logo via CSSOM (avoids inline style= under our CSP).
 	const logoEl = detailBody.querySelector("#detailLogo");
 	const lurl = logoUrl(svc.id);
 	if (lurl) logoEl.style.backgroundImage = `url("${lurl}")`;
 	else logoEl.remove();
+
 	// Tint the modal top border to reflect service status.
 	detailEl.querySelector(".modal__box").className = `modal__box is-${svc.status}`;
+
 	// Render Lucide icons injected by the template.
 	const newIcons = [...detailBody.querySelectorAll("i[data-lucide]")];
 	if (newIcons.length) lucide.createIcons({ nodes: newIcons });
-	detailBody.querySelector("#detailCopy").addEventListener("click", () => {
-		const link = `${location.origin}/?service=${encodeURIComponent(svc.id)}`;
-		navigator.clipboard?.writeText(link).then(
-			() => {
-				const label = detailBody.querySelector("#detailCopyLabel");
-				if (label) label.textContent = "Copied!";
-				setTimeout(() => {
-					const l = detailBody.querySelector("#detailCopyLabel");
-					if (l) l.textContent = "Copy link";
-				}, 1500);
-			},
-			() => {},
-		);
-	});
 }
 
 function renderDetailIncidents(incidents) {

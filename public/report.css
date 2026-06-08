@@ -550,14 +550,14 @@
   border-radius: 2px;
 }
 
-/* Tooltip bubble shown on hover/focus */
+/* Tooltip bubble shown on hover/focus. Rendered BELOW the bars so it never
+   clips against the top edge of a scrolling container (e.g. the detail modal). */
 .report-spark__col::after {
   content: attr(data-tip);
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   left: 50%;
-  transform: translate(-50%, -6px);
-  margin-bottom: 2px;
+  transform: translate(-50%, 6px);
   padding: 4px 8px;
   border-radius: 6px;
   background: rgba(22, 27, 34, .97);
@@ -573,15 +573,15 @@
   transition: opacity .12s;
 }
 
-/* Little caret under the bubble */
+/* Little caret above the bubble */
 .report-spark__col::before {
   content: "";
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   left: 50%;
   transform: translateX(-50%);
   border: 4px solid transparent;
-  border-top-color: rgba(22, 27, 34, .97);
+  border-bottom-color: rgba(22, 27, 34, .97);
   opacity: 0;
   pointer-events: none;
   z-index: 5;
