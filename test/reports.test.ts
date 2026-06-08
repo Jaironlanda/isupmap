@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import {
@@ -181,7 +181,9 @@ describe("queue consumer", () => {
 describe("GET /api/report/:id", () => {
 	it("returns 404 for an unknown service id", async () => {
 		const req = new Request("http://localhost/api/report/not-a-real-service");
-		const res = await worker.fetch(req, env, {} as ExecutionContext);
+		const ctx = createExecutionContext();
+		const res = await worker.fetch(req, env, ctx);
+		await waitOnExecutionContext(ctx);
 		expect(res.status).toBe(404);
 	});
 
@@ -190,7 +192,9 @@ describe("GET /api/report/:id", () => {
 		const { SERVICES } = await import("../src/services");
 		const id = SERVICES[0].id;
 		const req = new Request(`http://localhost/api/report/${id}`);
-		const res = await worker.fetch(req, env, {} as ExecutionContext);
+		const ctx = createExecutionContext();
+		const res = await worker.fetch(req, env, ctx);
+		await waitOnExecutionContext(ctx);
 		expect(res.status).toBe(200);
 		const body = await res.json() as Record<string, unknown>;
 		expect(body).toHaveProperty("total");
@@ -206,7 +210,9 @@ describe("POST /api/report/:id", () => {
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ reason: "errors" }),
 		});
-		const res = await worker.fetch(req, env, {} as ExecutionContext);
+		const ctx = createExecutionContext();
+		const res = await worker.fetch(req, env, ctx);
+		await waitOnExecutionContext(ctx);
 		expect(res.status).toBe(404);
 	});
 
@@ -218,7 +224,9 @@ describe("POST /api/report/:id", () => {
 			headers: { "content-type": "application/json", "cf-connecting-ip": "1.2.3.4" },
 			body: JSON.stringify({ reason: "slow" }),
 		});
-		const res = await worker.fetch(req, env, {} as ExecutionContext);
+		const ctx = createExecutionContext();
+		const res = await worker.fetch(req, env, ctx);
+		await waitOnExecutionContext(ctx);
 		expect(res.status).toBe(202);
 		const body = await res.json() as { ok: boolean; report: Record<string, unknown> };
 		expect(body.ok).toBe(true);
@@ -233,7 +241,29 @@ describe("POST /api/report/:id", () => {
 			headers: { "content-type": "application/json", "cf-connecting-ip": "1.2.3.5" },
 			body: JSON.stringify({ reason: "completely-made-up" }),
 		});
-		const res = await worker.fetch(req, env, {} as ExecutionContext);
+		const ctx = createExecutionContext();
+		const res = await worker.fetch(req, env, ctx);
+		await waitOnExecutionContext(ctx);
 		expect(res.status).toBe(202);
+	});
+
+	it("fails closed with 503 when VOTE_SALT is unset (won't store a reversible IP hash)", async () => {
+		const { SERVICES } = await import("../src/services");
+		const id = SERVICES[0].id;
+		const original = env.VOTE_SALT;
+		(env as { VOTE_SALT: string }).VOTE_SALT = "";
+		try {
+			const req = new Request(`http://localhost/api/report/${id}`, {
+				method: "POST",
+				headers: { "content-type": "application/json", "cf-connecting-ip": "1.2.3.6" },
+				body: JSON.stringify({ reason: "errors" }),
+			});
+			const ctx = createExecutionContext();
+			const res = await worker.fetch(req, env, ctx);
+			await waitOnExecutionContext(ctx);
+			expect(res.status).toBe(503);
+		} finally {
+			(env as { VOTE_SALT: string }).VOTE_SALT = original;
+		}
 	});
 });

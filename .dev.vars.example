@@ -1,6 +1,10 @@
 # Local development overrides — copy to .dev.vars (gitignored) and fill in values.
-# Currently this project has no required secrets.
-# Add any future Worker secrets here so contributors know what's needed.
+# Add any Worker secrets here so contributors know what's needed.
 
-# Example:
-# MY_SECRET=your-value-here
+# Salt for the community-report IP hash. The report write path (POST /api/report/:id)
+# fails closed when this is empty — an unsalted IP hash is reversible — so set it for
+# local dev. Any non-empty value works locally; production uses `wrangler secret put VOTE_SALT`.
+VOTE_SALT=local-dev-salt
+
+# Protomaps API key for the world map on /status/:id (optional — leave empty to disable).
+# PROTOMAPS_KEY=your-key-here

@@ -16,6 +16,7 @@ import { findService, renderNotFound, renderServicePage, renderSitemap, renderSt
 import {
 	aggregateReports,
 	countryOf,
+	DEDUP_WINDOW_MS,
 	hashIp,
 	insertReports,
 	normalizeReason,
@@ -375,25 +376,57 @@ export default {
 				} catch {
 					/* missing/invalid body → default reason */
 				}
+				// Fail closed: an unsalted IP hash is reversible (the IPv4 space is
+				// tiny), so without a real VOTE_SALT we'd be persisting recoverable
+				// PII. Refuse rather than store it. Production must
+				// `wrangler secret put VOTE_SALT`; local dev sets it in .dev.vars.
+				const salt = env.VOTE_SALT?.trim();
+				if (!salt) {
+					console.error("isUpMap: VOTE_SALT is not configured — refusing to record report (would store a reversible IP hash).");
+					return json({ error: "Reporting temporarily unavailable" }, { status: 503, headers: { "retry-after": "3600", "cache-control": "no-store" } });
+				}
+
 				const reason = normalizeReason(body.reason);
 				const country = countryOf(request);
-				const salt = env.VOTE_SALT ?? "";
+				const ts = Date.now();
 				const ipHash = await hashIp(ip, salt);
-				const msg: VoteMessage = { serviceId: service.id, country, ipHash, reason, ts: Date.now() };
-				await env.VOTE_QUEUE.send(msg);
+
+				// Server-side dedup mirroring the D1 PK (service, ip_hash, bucket):
+				// the INSERT OR IGNORE already drops duplicates, but a KV marker keyed
+				// the same way stops a single-IP repeat flood from filling the queue
+				// (and the consumer's D1 work) with rows that would only be discarded.
+				const bucket = Math.floor(ts / DEDUP_WINDOW_MS);
+				const dedupKey = `votedip:${service.id}:${ipHash}:${bucket}`;
+				if (!(await env.SNAPSHOT_KV.get(dedupKey))) {
+					const msg: VoteMessage = { serviceId: service.id, country, ipHash, reason, ts };
+					await env.VOTE_QUEUE.send(msg);
+					// Marker lives one dedup window; KV is best-effort, so a rare racing
+					// double-submit still falls back to the D1 PK for correctness.
+					await env.SNAPSHOT_KV.put(dedupKey, "1", { expirationTtl: DEDUP_WINDOW_MS / 1000 });
+				}
 
 				// Return the current (possibly stale) count so the UI can show it immediately.
 				const current = (await readCount(env.SNAPSHOT_KV, service.id)) ?? { windowMs: 0, total: 0, countries: [], reasons: [], recent: [], timeline: [] };
 				return json({ ok: true, report: current }, { status: 202, headers: { "cache-control": "no-store" } });
 			}
 
-			// GET: read-through KV → D1.
-			const cached = await readCount(env.SNAPSHOT_KV, service.id);
-			if (cached) return json(cached, { headers: { "cache-control": "no-store" } });
+			// GET: read-through KV → D1, fronted by the per-colo cache + rate limit
+			// like the other read endpoints. A short edge TTL collapses repeat polls
+			// onto one KV read; the queue consumer refreshes KV on each vote batch.
+			const cache = caches.default;
+			const cacheKey = new Request(new URL(`/api/report/${service.id}`, url.origin).toString(), { method: "GET" });
+			const hit = await cache.match(cacheKey);
+			if (hit) return hit;
 
-			const report = await aggregateReports(env.REPORTS_DB, service.id);
-			await writeCount(env.SNAPSHOT_KV, service.id, report);
-			return json(report, { headers: { "cache-control": "no-store" } });
+			const limited = await rateLimit(request, env);
+			if (limited) return limited;
+
+			const cached = await readCount(env.SNAPSHOT_KV, service.id);
+			const report = cached ?? (await aggregateReports(env.REPORTS_DB, service.id));
+			if (!cached) await writeCount(env.SNAPSHOT_KV, service.id, report);
+			const resp = json(report, { headers: { "cache-control": "public, max-age=30" } });
+			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			return resp;
 		}
 
 		// Crawlable sitemap, generated from SERVICES so it never drifts.
