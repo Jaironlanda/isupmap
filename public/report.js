@@ -11,7 +11,6 @@
  * fetch is shared via a module-level Promise stored in `reportFetch`.
  */
 
-import { layers, namedFlavor } from "/lib/protomaps-basemaps.esm.js";
 
 const REASONS = [
   { code: "unreachable", label: "Can't connect",   color: "#f85149" },
@@ -118,7 +117,7 @@ function fetchReport(serviceId) {
 
 // ---- World map (MapLibre GL + Protomaps) ------------------------------------
 
-function buildMapStyle(apiKey) {
+function buildMapStyle(apiKey, layers, namedFlavor) {
   return {
     version: 8,
     glyphs: "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
@@ -258,9 +257,12 @@ async function initMap(el) {
     return;
   }
 
+  // Loaded lazily so the basemap style helper is only fetched when a map renders.
+  const { layers, namedFlavor } = await import("/lib/protomaps-basemaps.esm.js");
+
   const map = new maplibregl.Map({
     container: el,
-    style: buildMapStyle(apiKey),
+    style: buildMapStyle(apiKey, layers, namedFlavor),
     center: [10, 20],
     zoom: 1.4,
     minZoom: 0.5,

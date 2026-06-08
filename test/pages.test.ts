@@ -45,6 +45,18 @@ describe("renderServicePage", () => {
 		expect(html).toContain('class="sp-card" data-report-widget');
 	});
 
+	it("includes the map + MapLibre assets only when showMap is true", () => {
+		const withMap = renderServicePage(svc, apiService(svc.id, "up"), 1000, "KEY", true);
+		expect(withMap).toContain('id="sp-map"');
+		expect(withMap).toContain("/lib/maplibre-gl.js");
+
+		const solo = renderServicePage(svc, apiService(svc.id, "up"), 1000, "KEY", false);
+		expect(solo).not.toContain('id="sp-map"');
+		expect(solo).not.toContain("maplibre-gl");
+		expect(solo).toContain("sp-wrap--solo");
+		expect(solo).toContain("/report.js"); // community-reports widget still loads
+	});
+
 	it("escapes untrusted snapshot text", () => {
 		const html = renderServicePage(svc, apiService(svc.id, "degraded", { description: "<img src=x onerror=alert(1)>" }), 1000);
 		expect(html).not.toContain("<img src=x");

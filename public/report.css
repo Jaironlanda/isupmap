@@ -40,6 +40,17 @@
   border-left: 1px solid rgba(255, 255, 255, .08);
 }
 
+/* Solo layout (no map): centered, wider details panel */
+.sp-wrap--solo { justify-content: center; }
+
+.sp-panel--solo {
+  width: 100%;
+  max-width: 600px;
+  flex: 0 1 600px;
+  margin: 0 auto;
+  border-left: none;
+}
+
 .sp-inner {
   padding: 16px 16px 40px;
   /* --status is set inline per-page to the current status colour. */

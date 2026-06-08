@@ -171,11 +171,15 @@ ${opts.scripts ?? ""}
 
 /**
  * Full HTML for a single service's status page.
- * Uses a full-viewport two-column layout: Protomaps world map on the left,
- * service info + community reports panel on the right.
+ *
+ * When `showMap` is true, uses a full-viewport two-column layout: Protomaps
+ * world map on the left, service info + community reports panel on the right.
+ * When false (e.g. a service with no community reports), the map — and the
+ * MapLibre/Protomaps assets it needs — are skipped entirely and the details
+ * panel is centered, saving the heavy map download and tile requests.
  * `mapKey` is the Protomaps API key (empty string disables the GL map).
  */
-export function renderServicePage(service: Service, current: ApiService | null, updatedAt: number | null, mapKey = ""): string {
+export function renderServicePage(service: Service, current: ApiService | null, updatedAt: number | null, mapKey = "", showMap = true): string {
 	const status: StatusLevel = current?.status ?? "unknown";
 	const copy = STATUS_COPY[status];
 	const color = STATUS_COLOR[status];
@@ -222,13 +226,10 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 		],
 	};
 
-	// Two-column full-viewport body: map div (left) + scrollable info panel (right).
-	const body = `
-<div class="sp-wrap">
-  <div class="sp-map" id="sp-map"
-    data-service-id="${escapeHtml(service.id)}"
-    data-map-key="${escapeHtml(mapKey)}"></div>
-  <aside class="sp-panel">
+	// Scrollable info panel — shared by both the two-column (with map) and the
+	// centered solo (no map) layouts.
+	const panel = `
+  <aside class="sp-panel${showMap ? "" : " sp-panel--solo"}">
     <div class="sp-inner" style="--status:${color}">
       <header class="sp-top">
         <div class="sp-top-left">
@@ -268,8 +269,22 @@ export function renderServicePage(service: Service, current: ApiService | null, 
         &middot; <a href="/status">All services</a>
       </footer>
     </div>
-  </aside>
+  </aside>`;
+
+	const body = showMap
+		? `
+<div class="sp-wrap">
+  <div class="sp-map" id="sp-map"
+    data-service-id="${escapeHtml(service.id)}"
+    data-map-key="${escapeHtml(mapKey)}"></div>${panel}
+</div>`
+		: `
+<div class="sp-wrap sp-wrap--solo">${panel}
 </div>`;
+
+	// MapLibre CSS/JS are only shipped when the map actually renders.
+	const mapCss = showMap ? `<link rel="stylesheet" href="/lib/maplibre-gl.css" />` : "";
+	const mapJs = showMap ? `<script src="/lib/maplibre-gl.js"></script>` : "";
 
 	return layout({
 		title,
@@ -278,8 +293,8 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 		jsonLd,
 		body,
 		noWrap: true,
-		extraHead: `<link rel="stylesheet" href="/lib/maplibre-gl.css" /><link rel="stylesheet" href="/report.css" /><style>html,body{height:100%;overflow:hidden}</style>`,
-		scripts: `<script src="/lib/maplibre-gl.js"></script><script src="/report.js" type="module"></script>`,
+		extraHead: `${mapCss}<link rel="stylesheet" href="/report.css" /><style>html,body{height:100%;overflow:hidden}</style>`,
+		scripts: `${mapJs}<script src="/report.js" type="module"></script>`,
 	});
 }
 

@@ -455,8 +455,22 @@ export default {
 
 			const { snapshot } = await loadSnapshot(env);
 			const current = snapshot.services.find((s) => s.id === service.id) ?? null;
-			// Service page loads report.js (scripts) and the Protomaps world map (connect + worker).
-			const resp = markup(renderServicePage(service, current, snapshot.updatedAt, env.PROTOMAPS_KEY ?? ""), "text/html; charset=utf-8", {}, { allowSelfScripts: true, allowMap: true });
+			// The world map only plots community reports, so skip it (and the heavy
+			// MapLibre/Protomaps download) when this service has none. KV-first with a
+			// D1 fallback — the cached count has a 10-min TTL, so a KV miss does NOT
+			// mean zero reports; fall back to D1 (and warm KV) like GET /api/report.
+			let reportSummary = await readCount(env.SNAPSHOT_KV, service.id);
+			if (!reportSummary) {
+				reportSummary = await aggregateReports(env.REPORTS_DB, service.id);
+				ctx.waitUntil(writeCount(env.SNAPSHOT_KV, service.id, reportSummary));
+			}
+			const showMap = reportSummary.total > 0 && Boolean(env.PROTOMAPS_KEY);
+			const resp = markup(
+				renderServicePage(service, current, snapshot.updatedAt, env.PROTOMAPS_KEY ?? "", showMap),
+				"text/html; charset=utf-8",
+				{},
+				{ allowSelfScripts: true, allowMap: showMap },
+			);
 			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
 			return resp;
 		}
