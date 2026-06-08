@@ -229,8 +229,7 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 
       <section class="sp-card sp-card--service sp-card--${status}">
         <div class="sp-svc">
-          <img class="sp-logo" src="${iconUrl}" alt="" width="40" height="40" loading="lazy"
-            onerror="this.style.display='none'" />
+          <img class="sp-logo" src="${iconUrl}" alt="" width="40" height="40" loading="lazy" />
           <div class="sp-svc-main">
             <div class="sp-svc-name">${escapeHtml(name)}</div>
             <div class="sp-svc-cat">${escapeHtml(service.category)}</div>

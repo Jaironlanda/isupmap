@@ -549,6 +549,15 @@ function updateMapWithReport(report) {
 
 // ---- Bootstrap --------------------------------------------------------------
 
+// Hide a broken service logo. The inline onerror on the <img> is blocked by the
+// page CSP (script-src 'self'), so handle the fallback here in this same-origin
+// module — covering images that have already failed by the time this runs.
+document.querySelectorAll(".sp-logo").forEach((img) => {
+  const hide = () => { img.style.display = "none"; };
+  if (img.complete && img.naturalWidth === 0) hide();
+  else img.addEventListener("error", hide, { once: true });
+});
+
 // Initialise the world map first (doesn't block the widget).
 const mapEl = document.getElementById("sp-map");
 if (mapEl) initMap(mapEl);
