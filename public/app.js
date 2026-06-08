@@ -1237,9 +1237,21 @@ function renderDetailHeader(svc) {
 		: svc.description ?? "";
 	const noteHtml = noteText ? `<p class="detail__svc-note">${escapeHtml(noteText)}</p>` : "";
 
-	// Official status page link inside the card.
+	// Official status page link inside the card, with the host shown muted below.
+	let host = "";
+	try {
+		if (d.url) host = new URL(d.url).host;
+	} catch {
+		/* ignore malformed url */
+	}
 	const extLinkHtml = d.url
-		? `<hr class="detail__rule" /><a class="detail__svc-ext" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer"><span>Official ${escapeHtml(svc.name)} status page</span><span class="detail__svc-ext-arrow" aria-hidden="true">↗</span></a>`
+		? `<hr class="detail__rule" /><a class="detail__svc-ext" href="${encodeURI(d.url)}" target="_blank" rel="noopener noreferrer">
+			<span class="detail__svc-ext-main">
+				<span>Official ${escapeHtml(svc.name)} status page</span>
+				${host ? `<span class="detail__svc-ext-host">${escapeHtml(host)}</span>` : ""}
+			</span>
+			<span class="detail__svc-ext-arrow" aria-hidden="true">↗</span>
+		</a>`
 		: "";
 
 	detailBody.innerHTML = `

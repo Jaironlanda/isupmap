@@ -1703,6 +1703,22 @@ body {
 }
 .detail__svc-ext:hover { color: var(--text); text-decoration: none; }
 .detail__svc-ext:hover .detail__svc-ext-arrow { transform: translate(2px, -2px); }
+
+.detail__svc-ext-main {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.detail__svc-ext-host {
+	font-size: 0.7rem;
+	font-weight: 400;
+	color: var(--muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
 .detail__svc-ext-arrow {
 	color: var(--up-hi);
 	font-size: 13px;
