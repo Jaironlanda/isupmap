@@ -45,7 +45,7 @@
   /* --status is set inline per-page to the current status colour. */
 }
 
-/* Top bar: brand + breadcrumbs */
+/* Top bar: back button + brand (left) · breadcrumbs (right) */
 .sp-top {
   display: flex;
   align-items: center;
@@ -54,9 +54,37 @@
   margin-bottom: 14px;
 }
 
+.sp-top-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.sp-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  background: rgba(255, 255, 255, .04);
+  color: #c9d1d9;
+  transition: background .12s, border-color .12s, color .12s;
+}
+
+.sp-back-btn:hover {
+  text-decoration: none;
+  color: #fff;
+  background: rgba(255, 255, 255, .08);
+  border-color: rgba(255, 255, 255, .22);
+}
+
 .sp-top .brand { font-size: 13px; gap: 6px; }
 .sp-top .brand img { width: 20px; height: 20px; }
-.sp-top .crumbs { margin: 0; font-size: 11px; }
+.sp-top .crumbs { margin: 0; font-size: 11px; flex-shrink: 0; }
 
 /* Question headline */
 .sp-q {
@@ -103,11 +131,23 @@
 
 .sp-svc-main { min-width: 0; flex: 1; }
 
+/* Name + status indicator share the top line */
+.sp-svc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .sp-svc-name {
+  min-width: 0;
   font-size: 16px;
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sp-svc-cat {
@@ -116,7 +156,7 @@
   margin-top: 2px;
 }
 
-/* Heartbeat (ECG) status indicator */
+/* Heartbeat status indicator */
 .sp-beat {
   display: inline-flex;
   align-items: center;
@@ -131,32 +171,40 @@
   font-weight: 600;
 }
 
-.sp-beat-svg {
-  width: 40px;
-  height: 14px;
-  overflow: visible;
+/* Pulsing status dot */
+.sp-beat-dot {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--status);
+  flex-shrink: 0;
 }
 
-.sp-beat-svg polyline {
-  fill: none;
-  stroke: var(--status);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 56;
-  stroke-dashoffset: 56;
-  animation: sp-ecg 2.4s linear infinite;
+.sp-beat-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--status);
+  animation: sp-beat 1.8s ease-out infinite;
 }
 
-/* Faster sweep when something is wrong. */
-.sp-beat--down .sp-beat-svg polyline,
-.sp-beat--degraded .sp-beat-svg polyline { animation-duration: 1.3s; }
-.sp-beat--unknown .sp-beat-svg polyline { animation: none; stroke-dashoffset: 0; opacity: .5; }
+/* Faster pulse when something is wrong. */
+.sp-beat--down .sp-beat-dot::after,
+.sp-beat--degraded .sp-beat-dot::after { animation-duration: 1.1s; }
+/* No live pulse for an unknown status. */
+.sp-beat--unknown .sp-beat-dot { opacity: .5; }
+.sp-beat--unknown .sp-beat-dot::after { animation: none; }
 
-@keyframes sp-ecg {
-  0%   { stroke-dashoffset: 56; }
-  55%  { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: -56; }
+@keyframes sp-beat {
+  0%   { transform: scale(1);   opacity: .55; }
+  70%  { transform: scale(2.6); opacity: 0; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-beat-dot::after { animation: none; }
 }
 
 /* Status / incident note inside the service card */
@@ -189,13 +237,6 @@
 .sp-ext:hover { text-decoration: none; color: #fff; }
 .sp-ext:hover .sp-ext-arrow { transform: translate(1px, -1px); }
 .sp-ext-arrow { color: #58a6ff; font-size: 13px; transition: transform .12s; }
-
-/* Back link */
-.sp-back {
-  display: inline-block;
-  margin: 4px 0 0;
-  font-size: 12.5px;
-}
 
 .sp-inner footer {
   margin-top: 16px;
@@ -650,8 +691,4 @@
   text-align: right;
   color: #8b949e;
   font-size: 11px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sp-beat-svg polyline { animation: none; stroke-dashoffset: 0; }
 }

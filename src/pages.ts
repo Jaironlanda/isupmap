@@ -61,7 +61,17 @@ const STATUS_COLOR: Record<StatusLevel, string> = {
 
 function formatUpdated(updatedAt: number | null): string {
 	if (!updatedAt) return "just now";
-	return new Date(updatedAt).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+	// Readable UTC timestamp without seconds, e.g. "Jun 7, 2026, 16:46 UTC".
+	const stamp = new Date(updatedAt).toLocaleString("en-US", {
+		timeZone: "UTC",
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false,
+	});
+	return `${stamp} UTC`;
 }
 
 /** Best-effort link to the provider's own status page, derived from the source. */
@@ -185,7 +195,7 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 	const checked = formatUpdated(updatedAt);
 	const heartbeat = `<span class="sp-beat sp-beat--${status}" title="Checked ${escapeHtml(checked)}" aria-label="${copy.label} — checked ${escapeHtml(checked)}">
         <span class="sp-beat-label">${copy.label}</span>
-        <svg class="sp-beat-svg" viewBox="0 0 40 14" fill="none" aria-hidden="true"><polyline points="0,7 11,7 14,7 16,2 19,12 22,4 24,7 40,7" /></svg>
+        <span class="sp-beat-dot" aria-hidden="true"></span>
       </span>`;
 
 	const provider = statusPageUrl(service);
@@ -221,7 +231,12 @@ export function renderServicePage(service: Service, current: ApiService | null, 
   <aside class="sp-panel">
     <div class="sp-inner" style="--status:${color}">
       <header class="sp-top">
-        <a class="brand" href="/"><img src="/images/logo/isupmap.png" alt="" width="22" height="22" />isUpMap</a>
+        <div class="sp-top-left">
+          <a class="sp-back-btn" href="/" aria-label="Back to status map" title="Back to status map">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <a class="brand" href="/"><img src="/images/logo/isupmap.png" alt="" width="22" height="22" />isUpMap</a>
+        </div>
         <nav class="crumbs"><a href="/status">Status</a> / ${escapeHtml(name)}</nav>
       </header>
 
@@ -231,10 +246,12 @@ export function renderServicePage(service: Service, current: ApiService | null, 
         <div class="sp-svc">
           <img class="sp-logo" src="${iconUrl}" alt="" width="40" height="40" loading="lazy" />
           <div class="sp-svc-main">
-            <div class="sp-svc-name">${escapeHtml(name)}</div>
+            <div class="sp-svc-top">
+              <div class="sp-svc-name">${escapeHtml(name)}</div>
+              ${heartbeat}
+            </div>
             <div class="sp-svc-cat">${escapeHtml(service.category)}</div>
           </div>
-          ${heartbeat}
         </div>
         ${note}
         <hr class="sp-rule" />
@@ -246,7 +263,6 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 
       <section class="sp-card" data-report-widget data-service-id="${escapeHtml(service.id)}"></section>
 
-      <a class="sp-back" href="/">← Back to live status map</a>
       <footer>
         isUpMap checks ${SERVICES.length}+ services every few minutes. Status reflects the latest automated probe and may lag the provider's own page.
         &middot; <a href="/status">All services</a>
