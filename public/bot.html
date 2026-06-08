@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IsUpMapBot — isUpMap</title>
+<meta name="description" content="Information about IsUpMapBot, the automated status-checking crawler used by isUpMap." />
+<link rel="canonical" href="https://isupmap.com/bot" />
+<meta name="robots" content="index, follow" />
+<meta name="theme-color" content="#0f1117" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="IsUpMapBot — isUpMap" />
+<meta property="og:description" content="Information about IsUpMapBot, the automated status-checking crawler used by isUpMap." />
+<meta property="og:url" content="https://isupmap.com/bot" />
+<meta property="og:site_name" content="isUpMap" />
+<meta property="og:image" content="https://isupmap.com/images/og-map.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="IsUpMapBot — isUpMap" />
+<meta name="twitter:description" content="Information about IsUpMapBot, the automated status-checking crawler used by isUpMap." />
+<meta name="twitter:image" content="https://isupmap.com/images/og-map.png" />
+<link rel="icon" type="image/png" href="/images/logo/icon/favicon-32x32.png" />
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"IsUpMapBot — isUpMap","url":"https://isupmap.com/bot","isPartOf":{"@id":"https://isupmap.com/#website"}}</script>
+<style>
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #0f1117; color: #e6edf3; font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+a { color: #58a6ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: #e6edf3; }
+.brand img { width: 24px; height: 24px; }
+.crumbs { margin: 24px 0 8px; font-size: 13px; color: #8b949e; }
+h1 { font-size: clamp(22px, 4vw, 30px); line-height: 1.2; margin: 8px 0 4px; }
+.subtitle { font-size: 13px; color: #8b949e; margin: 0 0 32px; }
+h2 { font-size: 18px; margin: 32px 0 8px; color: #c9d1d9; border-bottom: 1px solid rgba(255,255,255,.08); padding-bottom: 6px; }
+p { margin: 0 0 14px; }
+ul { margin: 0 0 14px; padding-left: 24px; }
+li { margin-bottom: 6px; }
+.ua-box { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 12px 16px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 14px; color: #79c0ff; word-break: break-all; margin: 12px 0 20px; }
+.note { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 14px 18px; margin: 16px 0; font-size: 14px; color: #8b949e; }
+footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.08); font-size: 12px; color: #8b949e; }
+footer a { color: #58a6ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="brand" href="/"><img src="/images/logo/isupmap.png" alt="" width="24" height="24" />isUpMap</a>
+  <nav class="crumbs"><a href="/">Home</a> / IsUpMapBot</nav>
+
+  <h1>IsUpMapBot</h1>
+  <p class="subtitle">Automated status crawler for <a href="https://isupmap.com">isupmap.com</a></p>
+
+  <h2>What is IsUpMapBot?</h2>
+  <p>IsUpMapBot is the automated crawler that powers <a href="https://isupmap.com">isUpMap</a> — a free, real-time heatmap of operational status for 80+ internet services. It runs as a <a href="https://workers.cloudflare.com" target="_blank" rel="noopener">Cloudflare Worker</a> on a scheduled cron every 5 minutes, polling publicly available status pages and RSS/Atom feeds.</p>
+
+  <h2>User-Agent string</h2>
+  <p>All requests from IsUpMapBot include the following <code>User-Agent</code> header:</p>
+  <div class="ua-box">IsUpMapBot/1.0 (+https://isupmap.com/bot)</div>
+
+  <h2>What it accesses</h2>
+  <p>IsUpMapBot reads only <strong>publicly available</strong> endpoints:</p>
+  <ul>
+    <li>Statuspage JSON APIs (<code>/api/v2/summary.json</code>) — used by services that run on Atlassian Statuspage or compatible platforms.</li>
+    <li>RSS and Atom incident feeds — for services that publish a public status feed (e.g. <code>status.example.com/feed</code>).</li>
+    <li>Plain HTTP reachability probes — a simple <code>GET</code> to a service's public status URL to confirm it responds.</li>
+  </ul>
+  <div class="note">IsUpMapBot never logs in, submits forms, or accesses any authenticated or private content. It only reads the same data a regular browser would see on a public status page.</div>
+
+  <h2>Crawl frequency &amp; volume</h2>
+  <p>Each monitored service is probed <strong>once per 5-minute cron cycle</strong>. Requests are lightweight (a single JSON or RSS fetch per service). A transient failure triggers one automatic retry before moving on — no aggressive retry loops.</p>
+
+  <h2>Origin</h2>
+  <p>Requests originate from <strong>Cloudflare's global edge network</strong>. The egress IP will be a Cloudflare datacenter IP and will vary by colo. You can verify the IP is a Cloudflare address via <a href="https://www.cloudflare.com/ips/" target="_blank" rel="noopener">cloudflare.com/ips</a>.</p>
+
+  <h2>Blocking or rate-limiting IsUpMapBot</h2>
+  <p>You are welcome to block or rate-limit IsUpMapBot using the <code>User-Agent</code> string above or by IP range. If you block it, your service will show as <strong>Unknown</strong> on isUpMap rather than generating false alerts. We respect standard HTTP status codes — a <code>429 Too Many Requests</code> or <code>403 Forbidden</code> response is treated as "host is reachable" and does not trigger an outage report.</p>
+
+  <h2>Contact</h2>
+  <p>Questions or concerns about IsUpMapBot? Reach out via <a href="https://x.com/JaironDevNull" target="_blank" rel="noopener">@JaironDevNull on X</a> or open an issue on the <a href="https://github.com/Jaironlanda/isupmap" target="_blank" rel="noopener">GitHub repository</a>.</p>
+
+  <footer>
+    &copy; 2026 isUpMap &middot; Jairon Landa
+    &middot; <a href="/">Live status map</a>
+    &middot; <a href="/status">All services</a>
+    &middot; <a href="/terms">Terms</a>
+    &middot; <a href="/privacy">Privacy Policy</a>
+  </footer>
+</div>
+</body>
+</html>

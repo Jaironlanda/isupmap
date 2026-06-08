@@ -373,6 +373,7 @@ export function renderSitemap(): string {
 		{ loc: `${CANONICAL_ORIGIN}/status`, changefreq: "hourly", priority: "0.8" },
 		{ loc: `${CANONICAL_ORIGIN}/terms`, changefreq: "monthly", priority: "0.3" },
 		{ loc: `${CANONICAL_ORIGIN}/privacy`, changefreq: "monthly", priority: "0.3" },
+		{ loc: `${CANONICAL_ORIGIN}/bot`, changefreq: "monthly", priority: "0.3" },
 		...SERVICES.map((s) => ({ loc: `${CANONICAL_ORIGIN}/status/${s.id}`, changefreq: "hourly", priority: "0.6" })),
 	];
 	const body = urls
