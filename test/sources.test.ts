@@ -479,32 +479,28 @@ describe("Mistral AI (http)", () => {
 	});
 });
 
-describe("DeepSeek (Statuspage)", () => {
-	const base = "https://status.deepseek.com";
-	const resolveDeepSeek = () =>
-		resolveStatus(svc({ type: "statuspage", base }));
+describe("DeepSeek (RSS)", () => {
+	const feedUrl = "https://status.deepseek.com/feed.rss";
+	const statusUrl = "https://status.deepseek.com";
+	const resolve = () => resolveStatus(svc({ type: "rss", url: feedUrl, statusUrl }));
+	const now = () => new Date().toUTCString();
 
-	function summaryBody(indicator: string, incidents: unknown[] = []) {
-		return JSON.stringify({
-			page: { url: base, updated_at: "2026-06-10T00:00:00Z" },
-			status: { indicator, description: `DeepSeek: ${indicator}` },
-			components: [],
-			incidents,
-		});
+	function deepseekRss(title: string, pubDate: string) {
+		return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>DeepSeek Status</title><link>${statusUrl}/</link><item><title>${title}</title><link>${statusUrl}/</link><pubDate>${pubDate}</pubDate><description>${title}</description></item></channel></rss>`;
 	}
 
-	it("reads summary.json from the configured base and returns up when all clear", async () => {
-		fetchSpy.mockResolvedValue(reply(summaryBody("none")));
-		const r = await resolveDeepSeek();
+	it("is up when the latest entry indicates recovery", async () => {
+		fetchSpy.mockResolvedValue(reply(deepseekRss("All systems recovered", now())));
+		const r = await resolve();
 		expect(r.status).toBe("up");
-		expect(fetchSpy.mock.calls[0][0]).toBe(`${base}/api/v2/summary.json`);
+		expect(r.details?.url).toBe(statusUrl);
 	});
 
-	it("returns down on a fresh active major incident", async () => {
-		const incident = { name: "API Service Disruption", impact: "major", shortlink: `${base}/incidents/1`, updated_at: "2026-06-10T01:00:00Z" };
-		fetchSpy.mockResolvedValue(reply(summaryBody("major", [incident])));
-		const r = await resolveDeepSeek();
+	it("is down when the latest entry indicates an outage", async () => {
+		fetchSpy.mockResolvedValue(reply(deepseekRss("API service disruption", now())));
+		const r = await resolve();
 		expect(r.status).toBe("down");
-		expect(r.details?.incident?.name).toBe("API Service Disruption");
+		expect(r.details?.url).toBe(statusUrl);
+		expect(r.details?.incident?.name).toBe("API service disruption");
 	});
 });
