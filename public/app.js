@@ -480,6 +480,7 @@ const customizeReset = document.getElementById("customizeReset");
 const customizeSearch = document.getElementById("customizeSearch");
 const customizeSearchClear = document.getElementById("customizeSearchClear");
 const customizeCollapse = document.getElementById("customizeCollapse");
+const customizeShare = document.getElementById("customizeShare");
 
 // Local-only UI state for the panel (not persisted).
 let czQuery = "";
@@ -652,6 +653,36 @@ customizeReset.addEventListener("click", () => {
 	syncProblemsBtn();
 	renderView();
 	renderCustomize();
+});
+
+// Build a link that reproduces the current hand-picked map. Only a curated subset
+// is encoded as ?only=; a default map (nothing hidden) shares a short bare URL.
+// Problems-only rides along via the existing ?filter= param.
+function buildShareUrl() {
+	const url = new URL(location.origin + location.pathname);
+	const tileable = (latest ?? []).filter((s) => !s.disabled);
+	const shown = tileable.filter((s) => !prefs.hidden.has(s.id));
+	// Emit ?only= only for a genuine subset. Nothing hidden → bare URL (default map);
+	// everything hidden → also bare (an empty ?only= would be ignored on load anyway).
+	if (shown.length > 0 && shown.length < tileable.length) url.searchParams.set("only", shown.map((s) => s.id).join(","));
+	if (prefs.problemsOnly) url.searchParams.set("filter", "problems");
+	return url.toString();
+}
+
+customizeShare.addEventListener("click", async () => {
+	const link = buildShareUrl();
+	try {
+		await navigator.clipboard.writeText(link);
+		const label = customizeShare.textContent;
+		customizeShare.textContent = "Copied!";
+		setTimeout(() => {
+			customizeShare.textContent = label;
+		}, 1500);
+	} catch {
+		// Clipboard API unavailable (insecure context / denied) — surface the URL
+		// so the user can copy it manually.
+		window.prompt("Copy this link:", link);
+	}
 });
 
 customizeBtn.addEventListener("click", () => toggleCustomize());
@@ -1269,6 +1300,20 @@ function handleDeepLinkOnce() {
 	if (filter === "problems" || filter === "down") {
 		prefs.problemsOnly = true; // view-only; not persisted (shared-link driven)
 		syncProblemsBtn();
+		renderView();
+	}
+	const only = params.get("only");
+	if (only) {
+		// View-only overlay: show exactly the shared set by hiding everything else.
+		// Not persisted (mirrors ?filter= above) — the visitor's saved map stays
+		// intact unless they actively edit Customize. Unknown ids are ignored.
+		const wanted = new Set(
+			only
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean),
+		);
+		prefs.hidden = new Set(latest.filter((s) => !wanted.has(s.id)).map((s) => s.id));
 		renderView();
 	}
 	const serviceId = params.get("service");
