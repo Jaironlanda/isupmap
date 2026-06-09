@@ -168,6 +168,7 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Docker | Developer & Cloud | RSS | `https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss` |
 | Appwrite | Developer & Cloud | RSS | `https://status.appwrite.online/feed.rss` |
 | Firebase | Developer & Cloud | RSS (Atom) | `https://status.firebase.google.com/en/feed.atom` |
+| Firecrawl | Developer & Cloud | RSS | `https://status.firecrawl.dev/feed.rss` |
 | OpenAI | AI | RSS | `https://status.openai.com/feed.rss` |
 | Anthropic | AI | Statuspage | `https://status.claude.com` |
 | xAI | AI | RSS | `https://status.x.ai/feed.xml` |
@@ -184,6 +185,10 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Deepgram | AI | Statuspage | `https://status.deepgram.com` |
 | AssemblyAI | AI | Statuspage | `https://status.assemblyai.com` |
 | Cursor | AI | RSS | `https://status.cursor.com/history.rss` |
+| Cerebras | AI | Statuspage | `https://status.cerebras.ai` |
+| Fireworks AI | AI | RSS | `https://status.fireworks.ai/feed.rss` |
+| DeepSeek | AI | Statuspage | `https://status.deepseek.com` |
+| Mistral AI | AI | HTTP ping | `https://status.mistral.ai` |
 | Stripe | Payments | Statuspage | `https://www.stripestatus.com` |
 | Coinbase | Payments | Statuspage | `https://status.coinbase.com` |
 | Shopify | Payments | Statuspage | `https://www.shopifystatus.com` |
