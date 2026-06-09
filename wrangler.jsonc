@@ -111,6 +111,15 @@
 			}
 		}
 	],
+	// Analytics Engine dataset for logging upstream fetch events (per-attempt
+	// latency, HTTP status, service id, source type). Query via the AE SQL API.
+	// No setup needed — the dataset is created automatically on the first write.
+	"analytics_engine_datasets": [
+		{
+			"binding": "FETCH_ANALYTICS",
+			"dataset": "isupmap_fetches"
+		}
+	],
 	"workers_dev": false,
 	"preview_urls": false
 }
