@@ -74,8 +74,8 @@ function markup(body: string, contentType: string, init: ResponseInit = {}, opts
 }
 
 /** Resolve every service concurrently; failures become `unknown`. */
-async function resolveAll(): Promise<ServiceStatus[]> {
-	const settled = await Promise.allSettled(SERVICES.map(resolveStatus));
+async function resolveAll(ae?: AnalyticsEngineDataset | null): Promise<ServiceStatus[]> {
+	const settled = await Promise.allSettled(SERVICES.map((svc) => resolveStatus(svc, ae)));
 	return settled.map((outcome, i) => {
 		if (outcome.status === "fulfilled") return outcome.value;
 		const svc = SERVICES[i];
@@ -169,7 +169,7 @@ async function loadSnapshot(env: Env): Promise<{ snapshot: Snapshot; fromCache: 
  * Shared by the cron and the cold-start path. Returns the service count.
  */
 async function refreshSnapshot(env: Env): Promise<number> {
-	const statuses = await resolveAll();
+	const statuses = await resolveAll(env.FETCH_ANALYTICS);
 	await persistSnapshot(env.DB, statuses);
 	const snapshot = await readSnapshot(env.DB);
 	if (snapshot) await env.SNAPSHOT_KV.put(SNAPSHOT_KEY, JSON.stringify(snapshot));

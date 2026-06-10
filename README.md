@@ -46,6 +46,8 @@ Cron (every 5m) ─▶ scheduled() ─▶ resolveStatus() × N      ┌─▶ St
                        │           (1 retry on a blip)      ├─▶ RSS / Atom feed   (fast-xml-parser)
                        │   (src/sources.ts) ────────────────┘
                        │                                    └─▶ HTTP reachability ping
+                       │       each fetch attempt ──────────────▶ Analytics Engine (FETCH_ANALYTICS)
+                       │                                          (service id, url, latency, status code, attempt)
                        ├─▶ persist to D1 (src/db.ts): flap-dampen → upsert `current`,
                        │   open/close `incidents`; daily retention sweep
                        └─▶ publish finished snapshot to KV (SNAPSHOT_KV)
@@ -291,10 +293,59 @@ and drop a matching `<id>.png` (a ~128px favicon) in
 
 ## Analytics
 
+### Frontend (GA4)
+
 Google Analytics (GA4) is wired in [public/analytics.js](public/analytics.js)
 and loads **only in production** — it's gated to non-localhost hosts (so it's
 off during `wrangler dev`) and injected from a same-origin module to avoid an
 inline script under the CSP. Update or remove `GA_ID` there to change it.
+
+### Upstream fetch analytics (Workers Analytics Engine)
+
+Every upstream fetch attempt made by the cron is logged to a **Workers
+Analytics Engine** dataset (`isupmap_fetches`) via the `FETCH_ANALYTICS`
+binding (see [src/analytics.ts](src/analytics.ts)). This gives a
+queryable record of each HTTP call the Worker makes — useful for spotting slow
+status pages, tracking retry rates, and debugging `unknown` spikes.
+
+**Schema** (query via `wrangler analytics-engine sql` or the AE SQL API):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `timestamp` | auto | When the fetch was made |
+| `index1` | string | Service ID (use in `WHERE` / `GROUP BY`) |
+| `blob1` | string | URL fetched |
+| `blob2` | string | Source type: `statuspage` · `rss` · `http` |
+| `blob3` | string | Error message (empty string on success) |
+| `double1` | number | HTTP status code (0 for network / timeout errors) |
+| `double2` | number | Round-trip latency in milliseconds |
+| `double3` | number | Attempt index (0 = first try, 1 = retry) |
+| `double4` | number | 1 if the response was `ok` (2xx), 0 otherwise |
+
+**Example queries:**
+
+```sql
+-- Average latency per service over the last hour
+SELECT index1 AS service, avg(double2) AS avg_latency_ms, count() AS fetches
+FROM isupmap_fetches
+WHERE timestamp > NOW() - INTERVAL '1' HOUR
+GROUP BY service ORDER BY avg_latency_ms DESC;
+
+-- Retry rate per source type
+SELECT blob2 AS source_type,
+       sum(double3) AS retries,
+       count() AS total,
+       round(sum(double3) / count() * 100, 1) AS retry_pct
+FROM isupmap_fetches
+WHERE timestamp > NOW() - INTERVAL '24' HOUR
+GROUP BY source_type;
+
+-- Services with the most errors in the last day
+SELECT index1 AS service, count() AS errors
+FROM isupmap_fetches
+WHERE double4 = 0 AND timestamp > NOW() - INTERVAL '24' HOUR
+GROUP BY service ORDER BY errors DESC LIMIT 20;
+```
 
 ## Development
 
@@ -339,14 +390,14 @@ provision a D1 database, and deploy — no manual config needed.
 ### Manual deploy
 
 ```sh
-npx wrangler d1 create isupmap                  # status DB; paste the printed id into wrangler.jsonc
-npx wrangler d1 create isupmap-reports          # community reports DB; paste the id into wrangler.jsonc
-npx wrangler kv namespace create SNAPSHOT_KV    # snapshot cache; paste the id into wrangler.jsonc
-npx wrangler queues create isupmap-votes        # vote queue
-npx wrangler queues create isupmap-votes-dlq    # dead-letter queue
-wrangler secret put VOTE_SALT                   # random string; protects IP hashes from reversal
-npm run deploy                                  # deploys the Worker + applies schema.sql to the remote D1
-npm run db:schema:reports:remote                # applies schema-reports.sql to REPORTS_DB
+npx wrangler d1 create isupmap                                   # status DB; paste the printed id into wrangler.jsonc
+npx wrangler d1 create isupmap-reports                           # community reports DB; paste the id into wrangler.jsonc
+npx wrangler kv namespace create SNAPSHOT_KV                     # snapshot cache; paste the id into wrangler.jsonc
+npx wrangler queues create isupmap-votes                         # vote queue
+npx wrangler queues create isupmap-votes-dlq                     # dead-letter queue
+wrangler secret put VOTE_SALT                                    # random string; protects IP hashes from reversal
+npm run deploy                                                   # deploys the Worker + applies schema.sql to the remote D1
+npm run db:schema:reports:remote                                 # applies schema-reports.sql to REPORTS_DB
 ```
 
 > Re-run `npm run db:schema:remote` / `db:schema:reports:remote` after adding
@@ -379,13 +430,14 @@ public/            Static frontend (served directly by Cloudflare)
 src/
   index.ts           Worker entry: scheduled() cron + rate-limited/cached /api/* + SSR /status pages & /sitemap.xml
   services.ts        Curated service list + status data sources + shared types
-  sources.ts         Per-source-type fetch + normalize (Statuspage/RSS/HTTP)
+  sources.ts         Per-source-type fetch + normalize (Statuspage/RSS/HTTP); logs each attempt to AE
+  analytics.ts       logFetch() helper — writes per-attempt fetch events to the Analytics Engine dataset
   db.ts              D1 persistence: flap-dampening, snapshot upserts, incident transitions, uptime, retention
   pages.ts           Server-rendered status pages (/status, /status/<id>) + sitemap.xml
   reports.ts         Community report write/read/aggregate logic (REPORTS_DB + SNAPSHOT_KV cache)
 schema.sql           D1 schema (current / incidents / meta / probe_state) + indexes
 schema-reports.sql   D1 schema for REPORTS_DB (reports table + index)
-wrangler.jsonc       Worker config (main, assets, cron, D1 × 2, KV, Queues, rate limits × 2)
+wrangler.jsonc       Worker config (main, assets, cron, D1 × 2, KV, Queues, rate limits × 2, Analytics Engine)
 ```
 
 ## Notes & limitations
