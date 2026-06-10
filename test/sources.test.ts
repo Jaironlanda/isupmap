@@ -98,6 +98,44 @@ describe("statuspage", () => {
 	});
 });
 
+describe("cerebras (statuspage)", () => {
+	const base = "https://status.cerebras.ai";
+	const cerebras: Service = { id: "cerebras", name: "Cerebras", category: "AI", weight: 4, source: { type: "statuspage", base } };
+	const resolve = () => resolveStatus(cerebras);
+
+	function summaryBody(indicator: string, incidents: unknown[] = []) {
+		return JSON.stringify({
+			page: { url: `${base}/`, updated_at: "2026-06-10T00:00:00Z" },
+			status: { indicator, description: indicator === "none" ? "All Systems Operational" : "Service Disruption" },
+			components: [],
+			incidents,
+		});
+	}
+
+	it("returns up when indicator is none (healthy)", async () => {
+		fetchSpy.mockResolvedValue(reply(summaryBody("none")));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(fetchSpy.mock.calls[0][0]).toBe(`${base}/api/v2/summary.json`);
+	});
+
+	it("returns down on a major indicator with a fresh active incident", async () => {
+		const incidents = [
+			{
+				name: "API Inference Outage",
+				impact: "critical",
+				shortlink: "https://status.cerebras.ai/incidents/abc123",
+				updated_at: "2026-06-10T12:00:00Z",
+			},
+		];
+		fetchSpy.mockResolvedValue(reply(summaryBody("major", incidents)));
+		const r = await resolve();
+		expect(r.status).toBe("down");
+		expect(r.details?.incident?.name).toBe("API Inference Outage");
+		expect(r.details?.incident?.url).toBe("https://status.cerebras.ai/incidents/abc123");
+	});
+});
+
 describe("rss", () => {
 	const url = "https://status.example.com/feed.rss";
 	const resolve = () => resolveStatus(svc({ type: "rss", url }));
@@ -339,6 +377,65 @@ describe("error handling", () => {
 	});
 });
 
+describe("Fireworks AI RSS feed", () => {
+	const feedUrl = "https://status.fireworks.ai/feed.rss";
+	const statusUrl = "https://status.fireworks.ai";
+	const resolve = () => resolveStatus(svc({ type: "rss", url: feedUrl, statusUrl }));
+	const now = () => new Date().toUTCString();
+
+	function fireworksRss(title: string, pubDate: string) {
+		return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Incidents | Fireworks AI</title><link>${statusUrl}/</link><item><title>${title}</title><link>${statusUrl}/</link><pubDate>${pubDate}</pubDate><description>${title}</description></item></channel></rss>`;
+	}
+
+	it("is up when the latest entry indicates recovery", async () => {
+		fetchSpy.mockResolvedValue(reply(fireworksRss("API service recovered", now())));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		// statusUrl must be surfaced so "Visit status page" links to the human page.
+		expect(r.details?.url).toBe(statusUrl);
+	});
+
+	it("is down when the latest entry says the service went down", async () => {
+		fetchSpy.mockResolvedValue(reply(fireworksRss("API service went down", now())));
+		const r = await resolve();
+		expect(r.status).toBe("down");
+		expect(r.details?.url).toBe(statusUrl);
+		// An active incident must be surfaced in the details.
+		expect(r.details?.incident?.name).toBe("API service went down");
+	});
+});
+
+describe("Firecrawl RSS feed (Betterstack)", () => {
+	const feedUrl = "https://status.firecrawl.dev/feed.rss";
+	const statusUrl = "https://status.firecrawl.dev";
+	const resolve = () => resolveStatus(svc({ type: "rss", url: feedUrl, statusUrl }));
+	const now = () => new Date().toUTCString();
+
+	function firecrawlRss(title: string, pubDate: string, description = "") {
+		const desc = description ? `<description><![CDATA[${description}]]></description>` : `<description>${title}</description>`;
+		return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Incidents | Firecrawl</title><link>${statusUrl}/</link><item><title>${title}</title><link>${statusUrl}/incident/1</link><pubDate>${pubDate}</pubDate>${desc}</item></channel></rss>`;
+	}
+
+	it("is up when the latest entry body signals resolution", async () => {
+		// Betterstack feeds keep a fixed incident title while the body advances
+		// through the lifecycle; the resolution state lives in the description.
+		fetchSpy.mockResolvedValue(reply(firecrawlRss("API is degraded", now(), "All services are back to normal and fully operational.")));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		// statusUrl must be surfaced so "Visit status page" links to the human page.
+		expect(r.details?.url).toBe(statusUrl);
+	});
+
+	it("is down when the latest entry signals an active outage", async () => {
+		fetchSpy.mockResolvedValue(reply(firecrawlRss("API is degraded", now(), "Investigating - We are seeing a major outage affecting API requests.")));
+		const r = await resolve();
+		expect(r.status).toBe("down");
+		expect(r.details?.url).toBe(statusUrl);
+		// An active incident must be surfaced in the details.
+		expect(r.details?.incident?.name).toBe("API is degraded");
+	});
+});
+
 describe("disabled services", () => {
 	it("short-circuits to unknown without fetching, surfacing the reason", async () => {
 		const reason = "Upstream no longer publishes a usable feed.";
@@ -348,5 +445,62 @@ describe("disabled services", () => {
 		expect(r.description).toBe(reason);
 		expect(r.disabled).toBe(reason);
 		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+});
+
+describe("Mistral AI (http)", () => {
+	const pingUrl = "https://status.mistral.ai";
+	const statusUrl = "https://status.mistral.ai";
+	const mistral: Service = {
+		id: "mistral",
+		name: "Mistral AI",
+		category: "AI",
+		weight: 6,
+		source: { type: "http", url: pingUrl, statusUrl },
+	};
+	const resolve = () => resolveStatus(mistral);
+
+	it("is up when the status page returns 200 (all clear)", async () => {
+		fetchSpy.mockResolvedValue(reply("<!DOCTYPE html><html>OK</html>", 200));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		// Pings the configured URL.
+		expect(fetchSpy.mock.calls[0][0]).toBe(pingUrl);
+		// statusUrl must be surfaced so "Visit status page" links correctly.
+		expect(r.details?.url).toBe(statusUrl);
+	});
+
+	it("is down when the status page returns 500 (server error)", async () => {
+		// Two calls: first attempt + one retry (both 5xx).
+		fetchSpy.mockResolvedValue(reply("Internal Server Error", 500));
+		const r = await resolve();
+		expect(r.status).toBe("down");
+		expect(r.details?.url).toBe(statusUrl);
+	});
+});
+
+describe("DeepSeek (RSS)", () => {
+	const feedUrl = "https://status.deepseek.com/feed.rss";
+	const statusUrl = "https://status.deepseek.com";
+	const resolve = () => resolveStatus(svc({ type: "rss", url: feedUrl, statusUrl }));
+	const now = () => new Date().toUTCString();
+
+	function deepseekRss(title: string, pubDate: string) {
+		return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>DeepSeek Status</title><link>${statusUrl}/</link><item><title>${title}</title><link>${statusUrl}/</link><pubDate>${pubDate}</pubDate><description>${title}</description></item></channel></rss>`;
+	}
+
+	it("is up when the latest entry indicates recovery", async () => {
+		fetchSpy.mockResolvedValue(reply(deepseekRss("All systems recovered", now())));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.details?.url).toBe(statusUrl);
+	});
+
+	it("is down when the latest entry indicates an outage", async () => {
+		fetchSpy.mockResolvedValue(reply(deepseekRss("API service disruption", now())));
+		const r = await resolve();
+		expect(r.status).toBe("down");
+		expect(r.details?.url).toBe(statusUrl);
+		expect(r.details?.incident?.name).toBe("API service disruption");
 	});
 });

@@ -8,7 +8,15 @@
  */
 
 import { XMLParser } from "fast-xml-parser";
+import { logFetch } from "./analytics";
 import type { Service, ServiceDetails, ServiceSource, ServiceStatus, StatusLevel } from "./services";
+
+/** Carries the Analytics Engine dataset + service context into fetch helpers. */
+interface FetchCtx {
+	ae: AnalyticsEngineDataset | null | undefined;
+	serviceId: string;
+	sourceType: string;
+}
 
 const UPSTREAM_TIMEOUT_MS = 15000;
 /** Edge-cache upstream responses for this long (seconds). */
@@ -60,11 +68,14 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * still surfaces (the 5xx is returned, or the error rethrown) so callers map it
  * to `unknown`/`down` as before.
  */
-async function fetchWithRetry(url: string, init: RequestInit = {}): Promise<Response> {
+async function fetchWithRetry(url: string, init: RequestInit = {}, ctx?: FetchCtx): Promise<Response> {
 	for (let attempt = 0; ; attempt++) {
 		const last = attempt > 0;
+		const start = Date.now();
 		try {
 			const res = await fetchUpstream(url, init);
+			const latencyMs = Date.now() - start;
+			logFetch(ctx?.ae, { serviceId: ctx?.serviceId ?? "", sourceType: ctx?.sourceType ?? "", url, statusCode: res.status, latencyMs, attempt, ok: res.ok });
 			// A 5xx on the first try is worth one retry; on the retry, return as-is.
 			if (!last && res.status >= 500) {
 				await delay(RETRY_BACKOFF_MS);
@@ -72,6 +83,8 @@ async function fetchWithRetry(url: string, init: RequestInit = {}): Promise<Resp
 			}
 			return res;
 		} catch (err) {
+			const latencyMs = Date.now() - start;
+			logFetch(ctx?.ae, { serviceId: ctx?.serviceId ?? "", sourceType: ctx?.sourceType ?? "", url, statusCode: 0, latencyMs, attempt, ok: false, error: err instanceof Error ? err.message : String(err) });
 			if (last) throw err;
 			await delay(RETRY_BACKOFF_MS);
 		}
@@ -132,8 +145,8 @@ function statuspageStatus(indicator: string, total: number, majorOutages: number
  * Atlassian Statuspage. We read `summary.json` (a superset of `status.json`)
  * so the hover card can show component rollups and active incidents.
  */
-async function fetchStatuspage(service: Service, base: string): Promise<ServiceStatus> {
-	const res = await fetchWithRetry(`${base.replace(/\/$/, "")}/api/v2/summary.json`);
+async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): Promise<ServiceStatus> {
+	const res = await fetchWithRetry(`${base.replace(/\/$/, "")}/api/v2/summary.json`, {}, ctx);
 	if (!res.ok) return result(service, "unknown", `Status API returned HTTP ${res.status}`);
 
 	const data = (await res.json()) as StatuspageSummary;
@@ -318,13 +331,13 @@ function classifyEntry(title: string, description: string): StatusLevel {
  * state from the most recent entry (see {@link classifyEntry}). A stale or
  * missing entry means the service is treated as up.
  */
-async function fetchRss(service: Service, url: string): Promise<ServiceStatus> {
+async function fetchRss(service: Service, url: string, ctx?: FetchCtx): Promise<ServiceStatus> {
 	const rssSource = service.source as Extract<ServiceSource, { type: "rss" }>;
 	// Use the explicit statusUrl if provided; otherwise derive from the feed URL's origin.
 	// entry.link points to a specific incident post — not the right target for "Visit status page".
 	const statusPageUrl = rssSource.statusUrl ?? new URL(url).origin;
 
-	const res = await fetchWithRetry(url);
+	const res = await fetchWithRetry(url, {}, ctx);
 	if (!res.ok) return result(service, "unknown", `Feed returned HTTP ${res.status}`);
 
 	const entry = latestEntry(xmlParser.parse(await res.text()));
@@ -359,10 +372,10 @@ async function fetchRss(service: Service, url: string): Promise<ServiceStatus> {
 const BOT_WALL_CODES = new Set([401, 403, 405, 406, 429]);
 
 /** Plain reachability check for services without a status feed. */
-async function fetchHttp(service: Service, url: string): Promise<ServiceStatus> {
+async function fetchHttp(service: Service, url: string, ctx?: FetchCtx): Promise<ServiceStatus> {
 	const httpSource = service.source as Extract<ServiceSource, { type: "http" }>;
 	const start = Date.now();
-	const res = await fetchWithRetry(url, { method: "GET", redirect: "follow" });
+	const res = await fetchWithRetry(url, { method: "GET", redirect: "follow" }, ctx);
 	const ms = Date.now() - start;
 	const baseDetails = { url: httpSource.statusUrl ?? url };
 	if (res.ok || (res.status >= 300 && res.status < 400)) {
@@ -380,20 +393,21 @@ async function fetchHttp(service: Service, url: string): Promise<ServiceStatus> 
 }
 
 /** Resolve a single service's status, mapping any failure to `unknown`. */
-export async function resolveStatus(service: Service): Promise<ServiceStatus> {
+export async function resolveStatus(service: Service, ae?: AnalyticsEngineDataset | null): Promise<ServiceStatus> {
 	// Disabled services have no usable upstream feed — skip the fetch and surface
 	// them as permanently `unknown` with the reason as the description.
 	if (service.disabled) {
 		return { ...result(service, "unknown", service.disabled), disabled: service.disabled };
 	}
+	const ctx: FetchCtx = { ae, serviceId: service.id, sourceType: service.source.type };
 	try {
 		switch (service.source.type) {
 			case "statuspage":
-				return await fetchStatuspage(service, service.source.base);
+				return await fetchStatuspage(service, service.source.base, ctx);
 			case "rss":
-				return await fetchRss(service, service.source.url);
+				return await fetchRss(service, service.source.url, ctx);
 			case "http":
-				return await fetchHttp(service, service.source.url);
+				return await fetchHttp(service, service.source.url, ctx);
 		}
 	} catch (err) {
 		const reason = err instanceof Error && err.name === "AbortError" ? "Timed out" : "Unreachable";
