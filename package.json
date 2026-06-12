@@ -22,7 +22,7 @@
     "fast-xml-parser": "^5.8.0"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.16.12",
+    "@cloudflare/vitest-pool-workers": "^0.16.14",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8",
     "wrangler": "^4.95.0"
