@@ -437,16 +437,29 @@ export default {
 			return markup(renderSitemap(), "application/xml; charset=utf-8", { headers: { "cache-control": "public, max-age=3600" } });
 		}
 
+		// 301 the trailing-slash variant to the canonical /status so crawlers index
+		// a single URL (otherwise Search Console flags the slash form as
+		// "Alternate page with proper canonical tag"). Query string is preserved.
+		if (url.pathname === "/status/") {
+			return Response.redirect(new URL(`/status${url.search}`, url.origin).toString(), 301);
+		}
+
 		// Server-rendered status directory (good for crawl discovery + internal links).
-		if (url.pathname === "/status" || url.pathname === "/status/") {
+		if (url.pathname === "/status") {
 			return markup(renderStatusIndex(), "text/html; charset=utf-8", { headers: { "cache-control": "public, max-age=3600" } });
 		}
 
 		// Per-service SSR page: /status/<id>. Indexable content for "is X down?".
-		const serviceMatch = url.pathname.match(/^\/status\/([a-z0-9-]+)\/?$/);
+		const serviceMatch = url.pathname.match(/^\/status\/([a-z0-9-]+)(\/?)$/);
 		if (serviceMatch) {
 			const service = findService(serviceMatch[1]);
 			if (!service) return markup(renderNotFound(), "text/html; charset=utf-8", { status: 404 });
+
+			// 301 the trailing-slash variant (/status/<id>/) to the canonical
+			// /status/<id> so crawlers only ever index one URL per service.
+			if (serviceMatch[2]) {
+				return Response.redirect(new URL(`/status/${service.id}${url.search}`, url.origin).toString(), 301);
+			}
 
 			const cache = caches.default;
 			const cacheKey = new Request(new URL(`/status/${service.id}`, url.origin).toString(), { method: "GET" });
