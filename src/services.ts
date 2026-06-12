@@ -147,8 +147,8 @@ export const SERVICES: Service[] = [
 	{ id: "cerebras", name: "Cerebras", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.cerebras.ai" } },
 	// Fireworks AI uses a custom status page — RSS is the reliable path.
 	{ id: "fireworksai", name: "Fireworks AI", category: "AI", weight: 4, source: { type: "rss", url: "https://status.fireworks.ai/feed.rss", statusUrl: "https://status.fireworks.ai" } },
-	// status.deepseek.com Statuspage JSON returns 525 (SSL handshake error) from Cloudflare edge — use the RSS feed instead.
-	{ id: "deepseek", name: "DeepSeek", category: "AI", weight: 7, source: { type: "rss", url: "https://status.deepseek.com/feed.rss", statusUrl: "https://status.deepseek.com" } },
+	// DeepSeek's status feed is currently unavailable — fall back to an HTTP ping of the status page.
+	{ id: "deepseek", name: "DeepSeek", category: "AI", weight: 7, source: { type: "http", url: "https://status.deepseek.com", statusUrl: "https://status.deepseek.com" } },
 	// Mistral AI uses a custom Checkly-powered status page (Nuxt app) with no open machine-readable feed — HTTP ping fallback.
 	{ id: "mistral", name: "Mistral AI", category: "AI", weight: 6, source: { type: "http", url: "https://status.mistral.ai", statusUrl: "https://status.mistral.ai" } },
 

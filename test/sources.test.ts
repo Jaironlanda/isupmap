@@ -479,28 +479,33 @@ describe("Mistral AI (http)", () => {
 	});
 });
 
-describe("DeepSeek (RSS)", () => {
-	const feedUrl = "https://status.deepseek.com/feed.rss";
+describe("DeepSeek (http)", () => {
+	const pingUrl = "https://status.deepseek.com";
 	const statusUrl = "https://status.deepseek.com";
-	const resolve = () => resolveStatus(svc({ type: "rss", url: feedUrl, statusUrl }));
-	const now = () => new Date().toUTCString();
+	const deepseek: Service = {
+		id: "deepseek",
+		name: "DeepSeek",
+		category: "AI",
+		weight: 7,
+		source: { type: "http", url: pingUrl, statusUrl },
+	};
+	const resolve = () => resolveStatus(deepseek);
 
-	function deepseekRss(title: string, pubDate: string) {
-		return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>DeepSeek Status</title><link>${statusUrl}/</link><item><title>${title}</title><link>${statusUrl}/</link><pubDate>${pubDate}</pubDate><description>${title}</description></item></channel></rss>`;
-	}
-
-	it("is up when the latest entry indicates recovery", async () => {
-		fetchSpy.mockResolvedValue(reply(deepseekRss("All systems recovered", now())));
+	it("is up when the status page returns 200 (all clear)", async () => {
+		fetchSpy.mockResolvedValue(reply("<!DOCTYPE html><html>OK</html>", 200));
 		const r = await resolve();
 		expect(r.status).toBe("up");
+		// Pings the configured URL.
+		expect(fetchSpy.mock.calls[0][0]).toBe(pingUrl);
+		// statusUrl must be surfaced so "Visit status page" links correctly.
 		expect(r.details?.url).toBe(statusUrl);
 	});
 
-	it("is down when the latest entry indicates an outage", async () => {
-		fetchSpy.mockResolvedValue(reply(deepseekRss("API service disruption", now())));
+	it("is down when the status page returns 500 (server error)", async () => {
+		// Two calls: first attempt + one retry (both 5xx).
+		fetchSpy.mockResolvedValue(reply("Internal Server Error", 500));
 		const r = await resolve();
 		expect(r.status).toBe("down");
 		expect(r.details?.url).toBe(statusUrl);
-		expect(r.details?.incident?.name).toBe("API service disruption");
 	});
 });
