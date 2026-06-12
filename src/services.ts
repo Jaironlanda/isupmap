@@ -181,7 +181,6 @@ export const SERVICES: Service[] = [
 	{ id: "atlassian", name: "Atlassian", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.atlassian.com" } },
 	{ id: "dropbox", name: "Dropbox", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.dropbox.com" } },
 	{ id: "datadog", name: "Datadog", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.datadoghq.com" } },
-	{ id: "reddit", name: "Reddit", category: "Productivity & Media", weight: 6, source: { type: "statuspage", base: "https://www.redditstatus.com" } },
 	{ id: "figma", name: "Figma", category: "Productivity & Media", weight: 6, source: { type: "statuspage", base: "https://status.figma.com" } },
 	{ id: "box", name: "Box", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.box.com" } },
 	{ id: "squarespace", name: "Squarespace", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.squarespace.com" } },
@@ -211,4 +210,27 @@ export const SERVICES: Service[] = [
 	{ id: "playstation", name: "PlayStation Network", category: "Gaming & Entertainment", weight: 7, source: { type: "http", url: "https://www.playstation.com", statusUrl: "https://status.playstation.com" } },
 	{ id: "riot", name: "Riot Games", category: "Gaming & Entertainment", weight: 6, source: { type: "http", url: "https://www.riotgames.com", statusUrl: "https://status.riotgames.com" } },
 	{ id: "spotify", name: "Spotify", category: "Gaming & Entertainment", weight: 9, source: { type: "http", url: "https://open.spotify.com" } },
+
+	// --- Social Media ---
+	// Social platforms generally publish no machine-readable status feed (and often
+	// none at all — see "Main reason companies disable status pages"), so we fall
+	// back to a plain reachability ping of the main site, like Netflix/Spotify above.
+	{ id: "x", name: "X (Twitter)", category: "Social Media", weight: 9, source: { type: "http", url: "https://x.com" } },
+	{ id: "facebook", name: "Facebook", category: "Social Media", weight: 9, source: { type: "http", url: "https://www.facebook.com" } },
+	{ id: "instagram", name: "Instagram", category: "Social Media", weight: 9, source: { type: "http", url: "https://www.instagram.com" } },
+	{ id: "youtube", name: "YouTube", category: "Social Media", weight: 9, source: { type: "http", url: "https://www.youtube.com" } },
+	{ id: "tiktok", name: "TikTok", category: "Social Media", weight: 8, source: { type: "http", url: "https://www.tiktok.com" } },
+	{ id: "whatsapp", name: "WhatsApp", category: "Social Media", weight: 8, source: { type: "http", url: "https://www.whatsapp.com" } },
+	{ id: "linkedin", name: "LinkedIn", category: "Social Media", weight: 7, source: { type: "http", url: "https://www.linkedin.com" } },
+	{ id: "telegram", name: "Telegram", category: "Social Media", weight: 7, source: { type: "http", url: "https://telegram.org" } },
+	// Reddit has a real Statuspage feed, unlike the ping-only platforms above.
+	{ id: "reddit", name: "Reddit", category: "Social Media", weight: 6, source: { type: "statuspage", base: "https://www.redditstatus.com" } },
+	{ id: "pinterest", name: "Pinterest", category: "Social Media", weight: 6, source: { type: "http", url: "https://www.pinterest.com" } },
+	// status.snap.com is unreachable from automated clients, so we ping the main site.
+	{ id: "snapchat", name: "Snapchat", category: "Social Media", weight: 6, source: { type: "http", url: "https://www.snapchat.com" } },
+	// Bluesky also has a real Statuspage feed (bluesky.statuspage.io) if richer data is wanted later.
+	{ id: "bluesky", name: "Bluesky", category: "Social Media", weight: 5, source: { type: "http", url: "https://bsky.app", statusUrl: "https://bluesky.statuspage.io" } },
+	{ id: "threads", name: "Threads", category: "Social Media", weight: 5, source: { type: "http", url: "https://www.threads.net" } },
+	{ id: "mastodon", name: "Mastodon", category: "Social Media", weight: 4, source: { type: "http", url: "https://mastodon.social", statusUrl: "https://mastodon.social/about" } },
+	{ id: "tumblr", name: "Tumblr", category: "Social Media", weight: 3, source: { type: "http", url: "https://www.tumblr.com" } },
 ];

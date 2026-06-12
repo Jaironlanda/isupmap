@@ -212,7 +212,6 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Atlassian | Productivity & Media | Statuspage | `https://status.atlassian.com` |
 | Dropbox | Productivity & Media | Statuspage | `https://status.dropbox.com` |
 | Datadog | Productivity & Media | Statuspage | `https://status.datadoghq.com` |
-| Reddit | Productivity & Media | Statuspage | `https://www.redditstatus.com` |
 | Figma | Productivity & Media | Statuspage | `https://status.figma.com` |
 | Box | Productivity & Media | Statuspage | `https://status.box.com` |
 | Squarespace | Productivity & Media | Statuspage | `https://status.squarespace.com` |
@@ -234,6 +233,21 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | PlayStation Network | Gaming & Entertainment | HTTP ping | `https://www.playstation.com` |
 | Riot Games | Gaming & Entertainment | HTTP ping | `https://www.riotgames.com` |
 | Spotify | Gaming & Entertainment | HTTP ping | `https://open.spotify.com` |
+| X (Twitter) | Social Media | HTTP ping | `https://x.com` |
+| Facebook | Social Media | HTTP ping | `https://www.facebook.com` |
+| Instagram | Social Media | HTTP ping | `https://www.instagram.com` |
+| YouTube | Social Media | HTTP ping | `https://www.youtube.com` |
+| TikTok | Social Media | HTTP ping | `https://www.tiktok.com` |
+| WhatsApp | Social Media | HTTP ping | `https://www.whatsapp.com` |
+| LinkedIn | Social Media | HTTP ping | `https://www.linkedin.com` |
+| Telegram | Social Media | HTTP ping | `https://telegram.org` |
+| Reddit | Social Media | Statuspage | `https://www.redditstatus.com` |
+| Pinterest | Social Media | HTTP ping | `https://www.pinterest.com` |
+| Snapchat | Social Media | HTTP ping | `https://www.snapchat.com` |
+| Bluesky | Social Media | HTTP ping | `https://bsky.app` |
+| Threads | Social Media | HTTP ping | `https://www.threads.net` |
+| Mastodon | Social Media | HTTP ping | `https://mastodon.social` |
+| Tumblr | Social Media | HTTP ping | `https://www.tumblr.com` |
 
 ### Disabled services
 

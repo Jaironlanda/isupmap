@@ -43,6 +43,10 @@ const LOGO_DOMAIN = {
 	webflow: "webflow.com", docusign: "docusign.com",
 	twitch: "twitch.tv", epicgames: "epicgames.com", netflix: "netflix.com", roblox: "roblox.com",
 	steam: "steampowered.com", playstation: "playstation.com", riot: "riotgames.com", spotify: "spotify.com",
+	x: "x.com", facebook: "facebook.com", instagram: "instagram.com", youtube: "youtube.com",
+	tiktok: "tiktok.com", whatsapp: "whatsapp.com", linkedin: "linkedin.com", telegram: "telegram.org",
+	pinterest: "pinterest.com", snapchat: "snapchat.com", bluesky: "bsky.app", threads: "threads.net",
+	mastodon: "joinmastodon.org", tumblr: "tumblr.com",
 };
 
 /** Logo URL for a service id, or null if unknown. Self-hosted under /images. */
