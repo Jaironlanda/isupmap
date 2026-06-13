@@ -93,6 +93,12 @@ export interface ApiService {
 	uptime: { day: number; week: number };
 	/** Reason the service is disabled (unreliable source), if applicable. */
 	disabled?: string;
+	/**
+	 * Community-report surge overlay: true when an anomalous number of users are
+	 * reporting problems right now (see detectSurges in src/reports.ts). Purely
+	 * supplementary — it never drives `status`/color, only a UI hint.
+	 */
+	surge?: boolean;
 }
 
 /**

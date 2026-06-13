@@ -17,6 +17,7 @@ import {
 	aggregateReports,
 	countryOf,
 	DEDUP_WINDOW_MS,
+	detectSurges,
 	hashIp,
 	insertReports,
 	normalizeReason,
@@ -172,8 +173,26 @@ async function refreshSnapshot(env: Env): Promise<number> {
 	const statuses = await resolveAll(env.FETCH_ANALYTICS);
 	await persistSnapshot(env.DB, statuses);
 	const snapshot = await readSnapshot(env.DB);
-	if (snapshot) await env.SNAPSHOT_KV.put(SNAPSHOT_KEY, JSON.stringify(snapshot));
+	if (snapshot) {
+		await decorateSurges(env, snapshot.services);
+		await env.SNAPSHOT_KV.put(SNAPSHOT_KEY, JSON.stringify(snapshot));
+	}
 	return statuses.length;
+}
+
+/**
+ * Overlay the Community-Report surge flag onto the snapshot before it's published
+ * to KV. This is a supplementary hint, not authoritative status — so a failure in
+ * the (separate) reports DB must never block the status snapshot: on any error we
+ * log and leave `surge` unset.
+ */
+async function decorateSurges(env: Env, services: ApiService[]): Promise<void> {
+	try {
+		const surges = await detectSurges(env.REPORTS_DB);
+		for (const s of services) s.surge = surges.get(s.id)?.surging ?? false;
+	} catch (err) {
+		console.error("surge detection failed (non-fatal):", err);
+	}
 }
 
 // Per-isolate guard: kick at most one cold-start populate at a time so a burst of

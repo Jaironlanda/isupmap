@@ -200,6 +200,132 @@ export async function pruneReports(db: D1Database, now = Date.now()): Promise<nu
 	return res.meta.changes ?? 0;
 }
 
+// ---- Surge detection (Downdetector-style anomaly signal) --------------------
+
+/**
+ * Trailing window whose report count is scored against the baseline. Wider than
+ * the 5-minute cron interval so consecutive passes overlap and a brief lull
+ * mid-incident doesn't drop the count to zero.
+ */
+export const SURGE_BUCKET_MS = 30 * 60 * 1000;
+/** z-score at/above which the live count counts as a statistical outlier. */
+export const SURGE_Z = 3;
+/**
+ * Absolute floor: never raise a surge on fewer than this many reports in the
+ * window, however large the z-score. This is the deliberate blind spot for
+ * low-traffic services — a handful of reports against a ~0 baseline yields a
+ * huge z, but is far too thin to call. Better a miss than a false outage.
+ */
+export const SURGE_MIN = 5;
+/**
+ * Consecutive anomalous buckets required before the surge is shown. Mirrors the
+ * status pipeline's CONFIRM_THRESHOLD (src/db.ts) so one noisy bucket can't flip
+ * the badge.
+ */
+export const SURGE_CONFIRM = 2;
+/** EWMA adaptation speed for the baseline (mean + variance). */
+const SURGE_ALPHA = 0.1;
+
+/** Per-service surge state returned by {@link detectSurges}. */
+export interface Surge {
+	serviceId: string;
+	/** Reports observed in the trailing {@link SURGE_BUCKET_MS} window. */
+	observed: number;
+	/** Expected reports for this service/window (baseline mean before this pass). */
+	baseline: number;
+	/** How many standard deviations above baseline the observed count is. */
+	z: number;
+	/** True once an anomaly has held for {@link SURGE_CONFIRM} consecutive buckets. */
+	surging: boolean;
+	/** Epoch ms the (confirmed) surge opened, if currently surging. */
+	since?: number;
+}
+
+interface BaselineRow {
+	service_id: string;
+	ewma_rate: number;
+	ewma_var: number;
+	surge: number;
+	streak: number;
+	surge_since: number | null;
+	updated_at: number;
+}
+
+/**
+ * Score each service's recent Community-Report volume against its own rolling
+ * baseline and update that baseline — the anomaly half of a Downdetector-style
+ * signal. Reads only the `reports` rows already collected; raises a `surging`
+ * flag when the trailing-window count is both a statistical outlier (z ≥
+ * {@link SURGE_Z}) and clears the absolute {@link SURGE_MIN} floor, sustained
+ * for {@link SURGE_CONFIRM} passes.
+ *
+ * Stateful: maintains `report_baseline` (EWMA mean + variance) across calls.
+ * The baseline is **frozen** while a service is anomalous so an ongoing surge
+ * can't retrain the model to expect outages. First-seen services are seeded and
+ * never surge on their first pass. Returns one entry per service that already
+ * had a baseline (i.e. excludes just-seeded ones).
+ *
+ * Supplementary only: callers overlay the result; it never feeds confirmStatus.
+ */
+export async function detectSurges(db: D1Database, now = Date.now()): Promise<Map<string, Surge>> {
+	const since = now - SURGE_BUCKET_MS;
+	const [countsRes, baseRes] = await db.batch([
+		db.prepare("SELECT service_id, COUNT(*) AS count FROM reports WHERE ts > ? GROUP BY service_id").bind(since),
+		db.prepare("SELECT * FROM report_baseline"),
+	]);
+
+	const counts = new Map((countsRes.results as { service_id: string; count: number }[]).map((r) => [r.service_id, r.count]));
+	const base = new Map((baseRes.results as BaselineRow[]).map((r) => [r.service_id, r]));
+
+	const upsert = db.prepare(
+		`INSERT INTO report_baseline (service_id, ewma_rate, ewma_var, surge, streak, surge_since, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(service_id) DO UPDATE SET
+		   ewma_rate = excluded.ewma_rate, ewma_var = excluded.ewma_var, surge = excluded.surge,
+		   streak = excluded.streak, surge_since = excluded.surge_since, updated_at = excluded.updated_at`,
+	);
+
+	const out = new Map<string, Surge>();
+	const writes: D1PreparedStatement[] = [];
+
+	// Union of services with a baseline and/or reports this window: a baselined
+	// service with zero reports still needs its baseline to decay toward zero.
+	for (const id of new Set([...base.keys(), ...counts.keys()])) {
+		const observed = counts.get(id) ?? 0;
+		const prev = base.get(id);
+
+		// Cold start: seed the baseline, never surge on first sight.
+		if (!prev) {
+			writes.push(upsert.bind(id, observed, Math.max(observed, 1), 0, 0, null, now));
+			continue;
+		}
+
+		// Variance is floored at 1 so a long-quiet baseline (var → 0) still needs a
+		// few absolute reports — not a single one — to read as an outlier.
+		const std = Math.sqrt(Math.max(prev.ewma_var, 1));
+		const z = (observed - prev.ewma_rate) / std;
+		const anomalous = observed >= SURGE_MIN && z >= SURGE_Z;
+		const streak = anomalous ? prev.streak + 1 : 0;
+		const surging = streak >= SURGE_CONFIRM;
+		const since = surging ? (prev.surge_since ?? now) : null;
+
+		// Freeze the baseline while anomalous so the spike can't inflate "normal".
+		let rate = prev.ewma_rate;
+		let varr = prev.ewma_var;
+		if (!anomalous) {
+			const diff = observed - rate;
+			rate = SURGE_ALPHA * observed + (1 - SURGE_ALPHA) * rate;
+			varr = (1 - SURGE_ALPHA) * (varr + SURGE_ALPHA * diff * diff);
+		}
+
+		writes.push(upsert.bind(id, rate, varr, surging ? 1 : 0, streak, since, now));
+		out.set(id, { serviceId: id, observed, baseline: prev.ewma_rate, z, surging, since: since ?? undefined });
+	}
+
+	await db.batch(writes);
+	return out;
+}
+
 // ---- Edge glue --------------------------------------------------------------
 
 /** Normalize the CF country code, bucketing absent/unknown/Tor to "Unknown". */
