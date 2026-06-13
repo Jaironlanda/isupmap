@@ -347,6 +347,16 @@ function renderTile(rect) {
 		status.textContent = STATUS_LABEL[svc.status] ?? svc.status;
 		tile.appendChild(status);
 	}
+
+	// Community-report surge: a corner badge when an anomalous number of users
+	// are reporting problems. Overlay only — never changes the tile color.
+	if (svc.surge) {
+		const surge = document.createElement("div");
+		surge.className = "tile__surge";
+		surge.title = "Users are reporting problems";
+		surge.setAttribute("aria-label", "Users are reporting problems");
+		tile.appendChild(surge);
+	}
 	return tile;
 }
 
@@ -1203,6 +1213,15 @@ function renderDetailHeader(svc) {
 		</a>`
 		: "";
 
+	// Surge banner: shown when community reports are spiking above this service's
+	// normal volume. A user-perceived signal, distinct from the official status.
+	const surgeHtml = svc.surge
+		? `<div class="detail__surge" role="status">
+				<span class="detail__surge-icon" aria-hidden="true">📈</span>
+				<span>Users are reporting problems — report volume is spiking above normal.</span>
+			</div>`
+		: "";
+
 	detailBody.innerHTML = `
 		<p class="detail__question">Is ${escapeHtml(svc.name)} down?</p>
 		<div class="detail__svc-card" style="--ds:${statusVar}">
@@ -1222,6 +1241,7 @@ function renderDetailHeader(svc) {
 			${noteHtml}
 			${extLinkHtml}
 		</div>
+		${surgeHtml}
 		<div class="detail__report-card">
 			<div data-report-widget data-service-id="${escapeHtml(svc.id)}"></div>
 		</div>

@@ -14,6 +14,11 @@
 	--down-hi: #fa5252;
 	--unknown: #495057;
 
+	/* Community-report surge overlay: deliberately off the status palette
+	   (violet) so it reads as an extra signal, not an outage color. */
+	--surge: #a855f7;
+	--surge-hi: #c084fc;
+
 	--grid-bg: #05070b;
 }
 
@@ -1183,6 +1188,59 @@ body {
 	opacity: 0.9;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
+}
+
+/* Surge badge: a pulsing dot in the tile corner when an anomalous number of
+   users are reporting problems. Supplementary to the tile's status color. */
+.tile__surge {
+	position: absolute;
+	top: 3px;
+	right: 3px;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--surge-hi);
+	box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3), 0 0 7px var(--surge-hi);
+	animation: surge-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes surge-pulse {
+	0%,
+	100% {
+		transform: scale(1);
+		opacity: 0.95;
+	}
+	50% {
+		transform: scale(1.35);
+		opacity: 0.6;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tile__surge {
+		animation: none;
+	}
+}
+
+/* Surge banner inside the service detail modal. */
+.detail__surge {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0.7rem 0 0;
+	padding: 0.5rem 0.7rem;
+	border-radius: 8px;
+	font-size: 0.82rem;
+	font-weight: 600;
+	line-height: 1.3;
+	color: var(--surge-hi);
+	background: color-mix(in srgb, var(--surge) 14%, var(--panel));
+	border: 1px solid color-mix(in srgb, var(--surge) 40%, transparent);
+}
+
+.detail__surge-icon {
+	flex: 0 0 auto;
+	font-size: 1rem;
 }
 
 /* --- Toasts --- */
