@@ -10,7 +10,22 @@ const STATUS_LABEL = {
 	degraded: "Degraded",
 	down: "Down",
 	unknown: "Unknown",
+	reported: "Reported",
 };
+
+/** Hover-tooltip text on the "Reported" status indicator (dialog beat). */
+const SURGE_TIP = "Users are reporting problems — volume is spiking above normal.";
+
+/**
+ * Display-only status: folds the community-report surge into the color a service
+ * is shown with, WITHOUT touching `svc.status` (which still drives incidents and
+ * uptime). A real outage always dominates — surge only colors an otherwise
+ * up/unknown service as "reported" (users complaining, probe still fine).
+ */
+function effectiveStatus(svc) {
+	if (svc.surge && (svc.status === "up" || svc.status === "unknown")) return "reported";
+	return svc.status;
+}
 
 // Brand domain per service id. Logos are self-hosted (see logoUrl); this map
 // doubles as the "has a logo" gate and a record of each service's domain.
@@ -104,7 +119,7 @@ function visibleServices() {
 	// Disabled services (unreliable source) are never tiled — they only appear,
 	// locked, in the Customize panel.
 	let v = latest.filter((s) => !s.disabled && !prefs.hidden.has(s.id));
-	if (prefs.problemsOnly) v = v.filter((s) => s.status !== "up");
+	if (prefs.problemsOnly) v = v.filter((s) => effectiveStatus(s) !== "up");
 	return v;
 }
 
@@ -119,9 +134,12 @@ function renderView() {
 				? "✓ All selected services are operational"
 				: "No services selected — open Customize to add some.";
 		gridEl.innerHTML = `<p class="grid__empty">${escapeHtml(msg)}</p>`;
-		gridEl.classList.remove("grid--focus");
+		gridEl.classList.remove("grid--focus", "grid--solo");
 		return;
 	}
+	// Solo view (e.g. customized down to one service): the lone tile fills the
+	// grid, so let the sparkline scale up instead of staying capped + tiny.
+	gridEl.classList.toggle("grid--solo", v.length === 1);
 	render(v);
 }
 
@@ -313,7 +331,7 @@ function renderSector(rect) {
 function renderTile(rect) {
 	const svc = rect.data;
 	const tile = document.createElement("article");
-	tile.className = `tile is-${svc.status}${svc.id === highlightId ? " tile--flash" : ""}`;
+	tile.className = `tile is-${effectiveStatus(svc)}${svc.id === highlightId ? " tile--flash" : ""}`;
 	setBox(tile, rect.x, rect.y, rect.w, rect.h, TILE_GAP / 2);
 	tile._svc = svc; // stash data for the hover card
 
@@ -344,10 +362,47 @@ function renderTile(rect) {
 		const status = document.createElement("div");
 		status.className = "tile__status";
 		status.style.fontSize = `${clamp(nameSize * 0.55, 9, 14)}px`;
-		status.textContent = STATUS_LABEL[svc.status] ?? svc.status;
+		status.textContent = STATUS_LABEL[effectiveStatus(svc)] ?? svc.status;
 		tile.appendChild(status);
 	}
+
+	// Community-report sparkline: a 24h report-volume trend line along the bottom
+	// of big tiles (Downdetector-style). Small tiles have no room, so render
+	// nothing. Overlay only — never changes the tile color; turns surge-colored
+	// when an anomalous number of users are reporting problems.
+	const bigEnough = rect.h >= 84 && rect.w >= 110;
+	if (bigEnough && Array.isArray(svc.spark) && svc.spark.length > 1) {
+		const spark = document.createElement("div");
+		spark.className = "tile__spark";
+		spark.innerHTML = sparklineSvg(svc.spark, !!svc.surge);
+		if (svc.surge) {
+			spark.title = "Users are reporting problems";
+			spark.setAttribute("aria-label", "Users are reporting problems");
+		} else {
+			spark.setAttribute("aria-hidden", "true");
+		}
+		tile.appendChild(spark);
+	}
 	return tile;
+}
+
+/** Build an SVG report-volume sparkline (line + faint area) from a count series. */
+function sparklineSvg(values, surging) {
+	const n = values.length;
+	const max = Math.max(...values, 1);
+	const PAD = 6; // top padding (viewBox units) so peaks aren't clipped
+	const line = values
+		.map((v, i) => {
+			const x = n <= 1 ? 0 : (i / (n - 1)) * 100;
+			const y = 100 - PAD - (v / max) * (100 - PAD);
+			return `${x.toFixed(1)},${y.toFixed(1)}`;
+		})
+		.join(" ");
+	const cls = surging ? "tile__spark-svg is-surging" : "tile__spark-svg";
+	return `<svg class="${cls}" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+		<polygon class="tile__spark-area" points="0,100 ${line} 100,100" />
+		<polyline class="tile__spark-line" points="${line}" />
+	</svg>`;
 }
 
 /** Position an absolutely-placed box, inset by `inset` px on every side for the gap. */
@@ -870,8 +925,8 @@ function buildPaletteItems(query) {
 		.sort((a, b) => a.name.localeCompare(b.name))
 		.map((s) => ({
 			label: s.name,
-			hint: `${s.category} · ${STATUS_LABEL[s.status]}`,
-			status: s.status,
+			hint: `${s.category} · ${STATUS_LABEL[effectiveStatus(s)]}`,
+			status: effectiveStatus(s),
 			kind: "service",
 			run: () => focusService(s.id),
 		}));
@@ -963,7 +1018,7 @@ function onSpotlightOutside(e) {
 function focusService(id) {
 	prefs.hidden.delete(id);
 	const svc = latest?.find((s) => s.id === id);
-	if (prefs.problemsOnly && svc && svc.status === "up") prefs.problemsOnly = false;
+	if (prefs.problemsOnly && svc && effectiveStatus(svc) === "up") prefs.problemsOnly = false;
 	savePrefs();
 	syncProblemsBtn();
 	highlightId = id;
@@ -1006,6 +1061,7 @@ const faviconEl = document.getElementById("favicon");
 function worstStatus(services) {
 	if (services.some((s) => s.status === "down")) return "down";
 	if (services.some((s) => s.status === "degraded")) return "degraded";
+	if (services.some((s) => effectiveStatus(s) === "reported")) return "reported";
 	return "up";
 }
 
@@ -1020,7 +1076,7 @@ function updateChrome(services) {
 
 	updateStatusbar(services);
 
-	const color = { up: "#40c057", degraded: "#f0b429", down: "#fa5252" }[worstStatus(services)];
+	const color = { up: "#40c057", reported: "#f0883e", degraded: "#f0b429", down: "#fa5252" }[worstStatus(services)];
 	const canvas = document.createElement("canvas");
 	canvas.width = canvas.height = 32;
 	const ctx = canvas.getContext("2d");
@@ -1038,15 +1094,17 @@ const statusSummaryDot = statusSummaryEl?.querySelector(".statusbar__dot");
 const statusSummaryText = document.getElementById("statusSummaryText");
 const legendCountEls = {
 	up: document.querySelector('[data-count="up"]'),
+	reported: document.querySelector('[data-count="reported"]'),
 	degraded: document.querySelector('[data-count="degraded"]'),
 	down: document.querySelector('[data-count="down"]'),
 	unknown: document.querySelector('[data-count="unknown"]'),
 };
 
 function updateStatusbar(services) {
-	const counts = { up: 0, degraded: 0, down: 0, unknown: 0 };
+	const counts = { up: 0, reported: 0, degraded: 0, down: 0, unknown: 0 };
 	for (const s of services) {
-		counts[s.status] = (counts[s.status] ?? 0) + 1;
+		const st = effectiveStatus(s);
+		counts[st] = (counts[st] ?? 0) + 1;
 	}
 
 	for (const [status, el] of Object.entries(legendCountEls)) {
@@ -1061,7 +1119,7 @@ function updateStatusbar(services) {
 		statusSummaryDot.className = `statusbar__dot is-${worst}`;
 	}
 	if (statusSummaryText) {
-		const issues = counts.down + counts.degraded;
+		const issues = counts.down + counts.degraded + counts.reported;
 		if (services.length === 0) {
 			statusSummaryText.textContent = "No services selected";
 		} else if (issues === 0) {
@@ -1070,13 +1128,14 @@ function updateStatusbar(services) {
 			const parts = [];
 			if (counts.down) parts.push(`${counts.down} down`);
 			if (counts.degraded) parts.push(`${counts.degraded} degraded`);
+			if (counts.reported) parts.push(`${counts.reported} reported`);
 			statusSummaryText.textContent = parts.join(" · ");
 		}
 	}
 
 	// When there are issues, the pill toggles the Problems-only filter; otherwise
 	// it's purely informational.
-	const hasIssues = counts.down + counts.degraded > 0;
+	const hasIssues = counts.down + counts.degraded + counts.reported > 0;
 	statusSummaryEl.disabled = !hasIssues && !prefs.problemsOnly;
 	statusSummaryEl.classList.toggle("is-active", prefs.problemsOnly);
 }
@@ -1171,6 +1230,7 @@ async function openDetail(svc) {
 // CSS variable name per status — used for the tinted service card (--ds).
 const DETAIL_STATUS_VAR = {
 	up: "var(--up-hi)",
+	reported: "var(--reported-hi)",
 	degraded: "var(--degraded-hi)",
 	down: "var(--down-hi)",
 	unknown: "var(--muted)",
@@ -1178,7 +1238,8 @@ const DETAIL_STATUS_VAR = {
 
 function renderDetailHeader(svc) {
 	const d = svc.details ?? {};
-	const statusVar = DETAIL_STATUS_VAR[svc.status] ?? "var(--muted)";
+	const effStatus = effectiveStatus(svc);
+	const statusVar = DETAIL_STATUS_VAR[effStatus] ?? "var(--muted)";
 
 	// Note shown inside the card: prefer the active incident name, fall back to description.
 	const noteText = d.incident
@@ -1211,8 +1272,8 @@ function renderDetailHeader(svc) {
 				<div class="detail__svc-main">
 					<div class="detail__svc-top">
 						<span class="detail__svc-name">${escapeHtml(svc.name)}</span>
-						<span class="detail__beat detail__beat--${svc.status}">
-							<span class="detail__beat-label">${STATUS_LABEL[svc.status]}</span>
+						<span class="detail__beat detail__beat--${effStatus}"${effStatus === "reported" ? ` title="${SURGE_TIP}"` : ""}>
+							<span class="detail__beat-label">${STATUS_LABEL[effStatus]}</span>
 							<span class="detail__beat-dot" aria-hidden="true"></span>
 						</span>
 					</div>
@@ -1239,7 +1300,7 @@ function renderDetailHeader(svc) {
 	else logoEl.remove();
 
 	// Tint the modal top border to reflect service status.
-	detailEl.querySelector(".modal__box").className = `modal__box is-${svc.status}`;
+	detailEl.querySelector(".modal__box").className = `modal__box is-${effStatus}`;
 
 	// Render Lucide icons injected by the template.
 	const newIcons = [...detailBody.querySelectorAll("i[data-lucide]")];

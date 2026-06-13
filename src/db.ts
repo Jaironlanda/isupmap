@@ -93,6 +93,18 @@ export interface ApiService {
 	uptime: { day: number; week: number };
 	/** Reason the service is disabled (unreliable source), if applicable. */
 	disabled?: string;
+	/**
+	 * Community-report surge overlay: true when an anomalous number of users are
+	 * reporting problems right now (see detectSurges in src/reports.ts). Purely
+	 * supplementary — it never drives `status`/color, only a UI hint.
+	 */
+	surge?: boolean;
+	/**
+	 * 24h hourly report-volume series (oldest first) for the per-tile sparkline.
+	 * Omitted when a service has no reports in the window. Supplementary overlay
+	 * only (see reportSparklines in src/reports.ts).
+	 */
+	spark?: number[];
 }
 
 /**

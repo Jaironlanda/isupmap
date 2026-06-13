@@ -3,12 +3,16 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import {
 	aggregateReports,
+	detectSurges,
 	insertReports,
 	normalizeReason,
 	pruneReports,
 	REPORT_WINDOW_MS,
+	reportSparklines,
+	SPARK_HOURS,
+	SURGE_BUCKET_MS,
 } from "../src/reports";
-import type { VoteMessage } from "../src/reports";
+import type { Surge, VoteMessage } from "../src/reports";
 import schemaReportsSql from "../schema-reports.sql?raw";
 
 async function applySchema(sql: string) {
@@ -33,6 +37,7 @@ beforeAll(() => applySchema(schemaReportsSql));
 
 beforeEach(async () => {
 	await env.REPORTS_DB.prepare("DELETE FROM reports").run();
+	await env.REPORTS_DB.prepare("DELETE FROM report_baseline").run();
 });
 
 describe("normalizeReason", () => {
@@ -111,6 +116,34 @@ describe("insertReports / aggregateReports", () => {
 		expect(report.recent).toHaveLength(0);
 	});
 
+	it("surfaces the surge flag from report_baseline", async () => {
+		const now = Date.now();
+		await insertReports(env.REPORTS_DB, [vote("svc-a", "h1", "US", "errors", now)]);
+		// No baseline row yet → not surging.
+		expect((await aggregateReports(env.REPORTS_DB, "svc-a", now)).surge).toBe(false);
+		// A confirmed surge in report_baseline → reflected in the report payload.
+		await env.REPORTS_DB.prepare(
+			"INSERT INTO report_baseline (service_id, ewma_rate, ewma_var, surge, streak, surge_since, updated_at) VALUES ('svc-a', 1, 1, 1, 2, ?, ?)",
+		).bind(now, now).run();
+		expect((await aggregateReports(env.REPORTS_DB, "svc-a", now)).surge).toBe(true);
+	});
+
+	it("returns a 24-bucket hourly volume series", async () => {
+		const now = Date.now();
+		const hour = 60 * 60 * 1000;
+		await insertReports(env.REPORTS_DB, [
+			vote("svc-a", "h1", "US", "errors", now),           // this hour
+			vote("svc-a", "h2", "GB", "slow", now),             // this hour
+			vote("svc-a", "h3", "US", "unreachable", now - hour), // last hour
+			vote("svc-a", "h4", "DE", "other", now - 50 * hour),  // outside 24h window
+		]);
+		const report = await aggregateReports(env.REPORTS_DB, "svc-a", now);
+
+		expect(report.hourly).toHaveLength(SPARK_HOURS);
+		expect(report.hourly.at(-1)?.count).toBe(2); // newest bucket: 2 this hour
+		expect(report.hourly.reduce((s, p) => s + p.count, 0)).toBe(3); // the 50h-old one is excluded
+	});
+
 	it("returns a 7-bucket daily volume timeline", async () => {
 		const now = Date.now();
 		const day = 24 * 60 * 60 * 1000;
@@ -154,6 +187,137 @@ describe("pruneReports", () => {
 		expect(removed).toBe(1);
 		const remaining = await env.REPORTS_DB.prepare("SELECT COUNT(*) AS n FROM reports").first<{ n: number }>();
 		expect(remaining?.n).toBe(1);
+	});
+});
+
+describe("detectSurges", () => {
+	// Passes are spaced just past the 30-min detection window so each pass only
+	// "sees" the reports inserted for it — letting us script a volume timeline.
+	const STEP = SURGE_BUCKET_MS + 60 * 1000;
+
+	/** Insert `n` reports for `serviceId` inside the window ending at `at`, with unique IP hashes. */
+	async function reportsAt(serviceId: string, n: number, at: number, tag: string): Promise<void> {
+		if (n === 0) return;
+		const rows = Array.from({ length: n }, (_, i) => vote(serviceId, `${tag}-${i}`, "US", "errors", at - 1000));
+		await insertReports(env.REPORTS_DB, rows);
+	}
+
+	it("seeds a baseline on first sight and never surges on the first pass", async () => {
+		const t = Date.now();
+		await reportsAt("svc-a", 20, t, "first");
+		const result = await detectSurges(env.REPORTS_DB, t);
+		// First-seen service is seeded, not scored — absent from the output.
+		expect(result.get("svc-a")).toBeUndefined();
+		const row = await env.REPORTS_DB.prepare("SELECT * FROM report_baseline WHERE service_id = ?").bind("svc-a").first();
+		expect(row).not.toBeNull();
+		expect(row?.surge).toBe(0);
+	});
+
+	it("raises a surge after a sustained spike above a quiet baseline", async () => {
+		let t = Date.now();
+		// Warm a low, stable baseline (~1 report/window).
+		for (let i = 0; i < 3; i++) {
+			await reportsAt("svc-a", 1, t, `warm${i}`);
+			await detectSurges(env.REPORTS_DB, t);
+			t += STEP;
+		}
+		// First spike: anomalous but unconfirmed (one bucket).
+		await reportsAt("svc-a", 12, t, "spike1");
+		expect((await detectSurges(env.REPORTS_DB, t)).get("svc-a")?.surging).toBe(false);
+		t += STEP;
+		// Second consecutive spike: confirmed surge.
+		await reportsAt("svc-a", 12, t, "spike2");
+		const r = (await detectSurges(env.REPORTS_DB, t)).get("svc-a");
+		expect(r?.surging).toBe(true);
+		expect(r?.observed).toBe(12);
+		expect(r?.since).toBeDefined();
+	});
+
+	it("does not surge below the absolute floor, however high the z-score", async () => {
+		let t = Date.now();
+		for (let i = 0; i < 3; i++) {
+			await reportsAt("svc-a", 1, t, `warm${i}`);
+			await detectSurges(env.REPORTS_DB, t);
+			t += STEP;
+		}
+		// 4 reports is a big jump over a ~1 baseline (z ≥ 3) but under SURGE_MIN (5).
+		for (let i = 0; i < 3; i++) {
+			await reportsAt("svc-a", 4, t, `low${i}`);
+			expect((await detectSurges(env.REPORTS_DB, t)).get("svc-a")?.surging).toBe(false);
+			t += STEP;
+		}
+	});
+
+	it("clears the surge once volume returns to normal", async () => {
+		let t = Date.now();
+		for (let i = 0; i < 3; i++) {
+			await reportsAt("svc-a", 1, t, `warm${i}`);
+			await detectSurges(env.REPORTS_DB, t);
+			t += STEP;
+		}
+		for (let i = 0; i < 2; i++) {
+			await reportsAt("svc-a", 12, t, `spike${i}`);
+			await detectSurges(env.REPORTS_DB, t);
+			t += STEP;
+		}
+		// Quiet pass (no new reports in window) → surge clears.
+		const r = (await detectSurges(env.REPORTS_DB, t)).get("svc-a");
+		expect(r?.observed).toBe(0);
+		expect(r?.surging).toBe(false);
+	});
+
+	it("scores services independently", async () => {
+		let t = Date.now();
+		// Warm low baselines for both.
+		for (let i = 0; i < 3; i++) {
+			await reportsAt("svc-a", 1, t, `wa${i}`);
+			await reportsAt("svc-b", 1, t, `wb${i}`);
+			await detectSurges(env.REPORTS_DB, t);
+			t += STEP;
+		}
+		// svc-a spikes for two consecutive buckets; svc-b stays calm.
+		let res = new Map<string, Surge>();
+		for (let i = 0; i < 2; i++) {
+			await reportsAt("svc-a", 12, t, `sp${i}`);
+			await reportsAt("svc-b", 1, t, `sb${i}`);
+			res = await detectSurges(env.REPORTS_DB, t);
+			t += STEP;
+		}
+		expect(res.get("svc-a")?.surging).toBe(true);
+		expect(res.get("svc-b")?.surging).toBe(false);
+	});
+});
+
+describe("reportSparklines", () => {
+	const hour = 60 * 60 * 1000;
+
+	it("returns a 24-bucket series per service with reports, oldest first", async () => {
+		const now = Date.now();
+		await insertReports(env.REPORTS_DB, [
+			vote("svc-a", "a1", "US", "errors", now),
+			vote("svc-a", "a2", "GB", "slow", now),
+			vote("svc-a", "a3", "US", "errors", now - hour),
+			vote("svc-b", "b1", "DE", "errors", now),
+		]);
+		const sparks = await reportSparklines(env.REPORTS_DB, now);
+
+		const a = sparks.get("svc-a");
+		expect(a).toHaveLength(SPARK_HOURS);
+		expect(a?.at(-1)).toBe(2); // newest hour
+		expect(a?.at(-2)).toBe(1); // previous hour
+		expect(a?.reduce((s, n) => s + n, 0)).toBe(3);
+		expect(sparks.get("svc-b")?.at(-1)).toBe(1);
+	});
+
+	it("omits services with no reports in the 24h window", async () => {
+		const now = Date.now();
+		await insertReports(env.REPORTS_DB, [
+			vote("svc-a", "old", "US", "errors", now - 50 * hour), // outside window
+			vote("svc-b", "new", "US", "errors", now),
+		]);
+		const sparks = await reportSparklines(env.REPORTS_DB, now);
+		expect(sparks.has("svc-a")).toBe(false);
+		expect(sparks.has("svc-b")).toBe(true);
 	});
 });
 

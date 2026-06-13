@@ -14,6 +14,18 @@
 	--down-hi: #fa5252;
 	--unknown: #495057;
 
+	/* "Reported": probe is up/unknown but community reports are surging. A
+	   display-only status color (orange) — never persisted to incidents/uptime. */
+	--reported: #d9772e;
+	--reported-hi: #f0883e;
+
+	/* Community-report surge overlay: deliberately off the status palette
+	   (violet) so it reads as an extra signal, not an outage color. */
+	--surge: #a855f7;
+	--surge-hi: #c084fc;
+	/* Calm report-volume sparkline (cyan) — recolors to --surge-hi when surging. */
+	--spark: #22d3ee;
+
 	--grid-bg: #05070b;
 }
 
@@ -284,9 +296,10 @@ body {
 	flex: 0 0 auto;
 }
 
-/* Pulse the dot while anything is down/degraded to draw the eye. */
+/* Pulse the dot while anything is down/degraded/reported to draw the eye. */
 .statusbar__dot.is-down,
-.statusbar__dot.is-degraded {
+.statusbar__dot.is-degraded,
+.statusbar__dot.is-reported {
 	animation: status-pulse 1.8s ease-in-out infinite;
 }
 
@@ -296,6 +309,7 @@ body {
 }
 
 .statusbar__dot.is-up { background: var(--up-hi); color: var(--up-hi); }
+.statusbar__dot.is-reported { background: var(--reported-hi); color: var(--reported-hi); }
 .statusbar__dot.is-degraded { background: var(--degraded-hi); color: var(--degraded-hi); }
 .statusbar__dot.is-down { background: var(--down-hi); color: var(--down-hi); }
 .statusbar__dot.is-unknown { background: var(--unknown); color: var(--unknown); }
@@ -356,6 +370,7 @@ body {
 }
 
 /* Highlight the count chips that represent problems. */
+.legend__item[data-status="reported"],
 .legend__item[data-status="degraded"],
 .legend__item[data-status="down"] {
 	border-color: var(--border);
@@ -374,6 +389,7 @@ body {
 .legend__item.is-empty {
 	opacity: 0.45;
 }
+.legend__item.is-empty[data-status="reported"],
 .legend__item.is-empty[data-status="degraded"],
 .legend__item.is-empty[data-status="down"] {
 	border-color: transparent;
@@ -389,6 +405,9 @@ body {
 
 .swatch.is-up {
 	background: var(--up-hi);
+}
+.swatch.is-reported {
+	background: var(--reported-hi);
 }
 .swatch.is-degraded {
 	background: var(--degraded-hi);
@@ -735,6 +754,9 @@ body {
 }
 .cz-row .dot.is-up {
 	background: var(--up-hi);
+}
+.cz-row .dot.is-reported {
+	background: var(--reported-hi);
 }
 .cz-row .dot.is-degraded {
 	background: var(--degraded-hi);
@@ -1103,6 +1125,9 @@ body {
 .tile.is-up {
 	background: var(--up);
 }
+.tile.is-reported {
+	background: var(--reported);
+}
 .tile.is-degraded {
 	background: var(--degraded);
 }
@@ -1183,6 +1208,64 @@ body {
 	opacity: 0.9;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
+}
+
+/* Report-volume sparkline along the bottom of big tiles (Downdetector-style).
+   Supplementary overlay — does not affect the tile's status color. Recolors to
+   the surge hue when an anomalous number of users are reporting problems. */
+.tile__spark {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 34%;
+	max-height: 38px;
+	pointer-events: none;
+	opacity: 0.92;
+}
+
+.tile__spark-svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.tile__spark-line {
+	fill: none;
+	stroke: var(--spark);
+	stroke-width: 1.6;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+	/* Keep the line crisp despite the non-uniform preserveAspectRatio scaling. */
+	vector-effect: non-scaling-stroke;
+}
+
+.tile__spark-area {
+	fill: var(--spark);
+	opacity: 0.16;
+}
+
+/* Solo view (a single service fills the grid): scale the sparkline up so it
+   reads as a proper chart instead of a thin capped strip at the bottom. */
+.grid--solo .tile__spark {
+	height: 30%;
+	max-height: 200px;
+	opacity: 1;
+}
+
+.grid--solo .tile__spark-line {
+	stroke-width: 2.2;
+}
+
+/* On a surging tile the fill is already the "reported" orange, so draw the line
+   in a high-contrast white rather than a clashing accent. */
+.tile__spark-svg.is-surging .tile__spark-line {
+	stroke: rgba(255, 255, 255, 0.92);
+}
+
+.tile__spark-svg.is-surging .tile__spark-area {
+	fill: #ffffff;
+	opacity: 0.16;
 }
 
 /* --- Toasts --- */
@@ -1486,6 +1569,7 @@ body {
 }
 
 .modal__box.is-up      { border-top-color: var(--up-hi); }
+.modal__box.is-reported { border-top-color: var(--reported-hi); }
 .modal__box.is-degraded { border-top-color: var(--degraded-hi); }
 .modal__box.is-down    { border-top-color: var(--down-hi); }
 .modal__box.is-unknown { border-top-color: var(--unknown); }

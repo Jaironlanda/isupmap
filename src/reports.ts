@@ -19,8 +19,14 @@ export const REPORT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** One day, in ms — the bucket size for the 7-day report-volume timeline. */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** One hour, in ms — the bucket size for the 24h report-volume sparkline. */
+const HOUR_MS = 60 * 60 * 1000;
+
 /** Number of daily buckets in the report-volume timeline. */
 const TIMELINE_DAYS = 7;
+
+/** Number of hourly buckets in the 24h report-volume sparkline (tiles + chart). */
+export const SPARK_HOURS = 24;
 
 /** Delete reports older than this during the daily retention sweep. */
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -65,6 +71,10 @@ export interface Report {
 	recent: RecentReport[];
 	/** 7 daily buckets over the last 7 days, oldest first (report-volume chart). */
 	timeline: TimelinePoint[];
+	/** 24 hourly buckets over the last 24h, oldest first (Downdetector-style chart). */
+	hourly: TimelinePoint[];
+	/** Whether community reports are currently surging (anomaly confirmed). */
+	surge: boolean;
 }
 
 /** Internal queue message shape — not part of the public API. */
@@ -144,6 +154,11 @@ interface DayRow {
 	count: number;
 }
 
+interface HourRow {
+	hour: number;
+	count: number;
+}
+
 /**
  * Aggregate recent reports for a service over the trailing REPORT_WINDOW_MS.
  * Returns 7-day totals plus per-country and per-reason breakdowns, the 10 newest
@@ -155,8 +170,12 @@ export async function aggregateReports(db: D1Database, serviceId: string, now = 
 	const nowDay = Math.floor(now / DAY_MS);
 	const firstDay = nowDay - (TIMELINE_DAYS - 1);
 	const since7 = firstDay * DAY_MS;
+	// 24h sparkline aligned to hour boundaries.
+	const nowHour = Math.floor(now / HOUR_MS);
+	const firstHour = nowHour - (SPARK_HOURS - 1);
+	const since24 = firstHour * HOUR_MS;
 
-	const [byCountry, byReason, latest, byDay] = await db.batch([
+	const [byCountry, byReason, latest, byDay, byHour, baseline] = await db.batch([
 		db
 			.prepare(
 				"SELECT country AS label, COUNT(*) AS count FROM reports WHERE service_id = ? AND ts > ? GROUP BY country ORDER BY count DESC",
@@ -177,6 +196,12 @@ export async function aggregateReports(db: D1Database, serviceId: string, now = 
 				"SELECT ts / 86400000 AS day, COUNT(*) AS count FROM reports WHERE service_id = ? AND ts >= ? GROUP BY day",
 			)
 			.bind(serviceId, since7),
+		db
+			.prepare(
+				"SELECT ts / 3600000 AS hour, COUNT(*) AS count FROM reports WHERE service_id = ? AND ts >= ? GROUP BY hour",
+			)
+			.bind(serviceId, since24),
+		db.prepare("SELECT surge FROM report_baseline WHERE service_id = ?").bind(serviceId),
 	]);
 
 	const countries = (byCountry.results as CountRow[]).map((r) => ({ country: r.label, count: r.count }));
@@ -191,13 +216,180 @@ export async function aggregateReports(db: D1Database, serviceId: string, now = 
 		timeline.push({ t: d * DAY_MS, count: dayCounts.get(d) ?? 0 });
 	}
 
-	return { windowMs: REPORT_WINDOW_MS, total, countries, reasons, recent, timeline };
+	// Densify the sparse hour rows into a contiguous 24-bucket array (oldest first).
+	const hourCounts = new Map((byHour.results as HourRow[]).map((r) => [r.hour, r.count]));
+	const hourly: TimelinePoint[] = [];
+	for (let h = firstHour; h <= nowHour; h++) {
+		hourly.push({ t: h * HOUR_MS, count: hourCounts.get(h) ?? 0 });
+	}
+
+	const surge = ((baseline.results as { surge: number }[])[0]?.surge ?? 0) === 1;
+
+	return { windowMs: REPORT_WINDOW_MS, total, countries, reasons, recent, timeline, hourly, surge };
+}
+
+/**
+ * 24h hourly report-volume series for *every* service that has reports, in one
+ * query — the per-tile sparkline data folded into the snapshot by the cron.
+ * Returns a contiguous {@link SPARK_HOURS}-length array (oldest first) per
+ * service; services with no reports in the window are absent from the map.
+ */
+export async function reportSparklines(db: D1Database, now = Date.now()): Promise<Map<string, number[]>> {
+	const nowHour = Math.floor(now / HOUR_MS);
+	const firstHour = nowHour - (SPARK_HOURS - 1);
+	const since = firstHour * HOUR_MS;
+
+	const res = await db
+		.prepare("SELECT service_id, ts / 3600000 AS hour, COUNT(*) AS count FROM reports WHERE ts >= ? GROUP BY service_id, hour")
+		.bind(since)
+		.all<{ service_id: string; hour: number; count: number }>();
+
+	const byService = new Map<string, Map<number, number>>();
+	for (const r of res.results) {
+		const hours = byService.get(r.service_id) ?? new Map<number, number>();
+		hours.set(r.hour, r.count);
+		byService.set(r.service_id, hours);
+	}
+
+	const out = new Map<string, number[]>();
+	for (const [id, hours] of byService) {
+		const arr: number[] = [];
+		for (let h = firstHour; h <= nowHour; h++) arr.push(hours.get(h) ?? 0);
+		out.set(id, arr);
+	}
+	return out;
 }
 
 /** Delete reports older than the retention window. Returns the row count removed. */
 export async function pruneReports(db: D1Database, now = Date.now()): Promise<number> {
 	const res = await db.prepare("DELETE FROM reports WHERE ts < ?").bind(now - RETENTION_MS).run();
 	return res.meta.changes ?? 0;
+}
+
+// ---- Surge detection (Downdetector-style anomaly signal) --------------------
+
+/**
+ * Trailing window whose report count is scored against the baseline. Wider than
+ * the 5-minute cron interval so consecutive passes overlap and a brief lull
+ * mid-incident doesn't drop the count to zero.
+ */
+export const SURGE_BUCKET_MS = 30 * 60 * 1000;
+/** z-score at/above which the live count counts as a statistical outlier. */
+export const SURGE_Z = 3;
+/**
+ * Absolute floor: never raise a surge on fewer than this many reports in the
+ * window, however large the z-score. This is the deliberate blind spot for
+ * low-traffic services — a handful of reports against a ~0 baseline yields a
+ * huge z, but is far too thin to call. Better a miss than a false outage.
+ */
+export const SURGE_MIN = 5;
+/**
+ * Consecutive anomalous buckets required before the surge is shown. Mirrors the
+ * status pipeline's CONFIRM_THRESHOLD (src/db.ts) so one noisy bucket can't flip
+ * the badge.
+ */
+export const SURGE_CONFIRM = 2;
+/** EWMA adaptation speed for the baseline (mean + variance). */
+const SURGE_ALPHA = 0.1;
+
+/** Per-service surge state returned by {@link detectSurges}. */
+export interface Surge {
+	serviceId: string;
+	/** Reports observed in the trailing {@link SURGE_BUCKET_MS} window. */
+	observed: number;
+	/** Expected reports for this service/window (baseline mean before this pass). */
+	baseline: number;
+	/** How many standard deviations above baseline the observed count is. */
+	z: number;
+	/** True once an anomaly has held for {@link SURGE_CONFIRM} consecutive buckets. */
+	surging: boolean;
+	/** Epoch ms the (confirmed) surge opened, if currently surging. */
+	since?: number;
+}
+
+interface BaselineRow {
+	service_id: string;
+	ewma_rate: number;
+	ewma_var: number;
+	surge: number;
+	streak: number;
+	surge_since: number | null;
+	updated_at: number;
+}
+
+/**
+ * Score each service's recent Community-Report volume against its own rolling
+ * baseline and update that baseline — the anomaly half of a Downdetector-style
+ * signal. Reads only the `reports` rows already collected; raises a `surging`
+ * flag when the trailing-window count is both a statistical outlier (z ≥
+ * {@link SURGE_Z}) and clears the absolute {@link SURGE_MIN} floor, sustained
+ * for {@link SURGE_CONFIRM} passes.
+ *
+ * Stateful: maintains `report_baseline` (EWMA mean + variance) across calls.
+ * The baseline is **frozen** while a service is anomalous so an ongoing surge
+ * can't retrain the model to expect outages. First-seen services are seeded and
+ * never surge on their first pass. Returns one entry per service that already
+ * had a baseline (i.e. excludes just-seeded ones).
+ *
+ * Supplementary only: callers overlay the result; it never feeds confirmStatus.
+ */
+export async function detectSurges(db: D1Database, now = Date.now()): Promise<Map<string, Surge>> {
+	const since = now - SURGE_BUCKET_MS;
+	const [countsRes, baseRes] = await db.batch([
+		db.prepare("SELECT service_id, COUNT(*) AS count FROM reports WHERE ts > ? GROUP BY service_id").bind(since),
+		db.prepare("SELECT * FROM report_baseline"),
+	]);
+
+	const counts = new Map((countsRes.results as { service_id: string; count: number }[]).map((r) => [r.service_id, r.count]));
+	const base = new Map((baseRes.results as BaselineRow[]).map((r) => [r.service_id, r]));
+
+	const upsert = db.prepare(
+		`INSERT INTO report_baseline (service_id, ewma_rate, ewma_var, surge, streak, surge_since, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(service_id) DO UPDATE SET
+		   ewma_rate = excluded.ewma_rate, ewma_var = excluded.ewma_var, surge = excluded.surge,
+		   streak = excluded.streak, surge_since = excluded.surge_since, updated_at = excluded.updated_at`,
+	);
+
+	const out = new Map<string, Surge>();
+	const writes: D1PreparedStatement[] = [];
+
+	// Union of services with a baseline and/or reports this window: a baselined
+	// service with zero reports still needs its baseline to decay toward zero.
+	for (const id of new Set([...base.keys(), ...counts.keys()])) {
+		const observed = counts.get(id) ?? 0;
+		const prev = base.get(id);
+
+		// Cold start: seed the baseline, never surge on first sight.
+		if (!prev) {
+			writes.push(upsert.bind(id, observed, Math.max(observed, 1), 0, 0, null, now));
+			continue;
+		}
+
+		// Variance is floored at 1 so a long-quiet baseline (var → 0) still needs a
+		// few absolute reports — not a single one — to read as an outlier.
+		const std = Math.sqrt(Math.max(prev.ewma_var, 1));
+		const z = (observed - prev.ewma_rate) / std;
+		const anomalous = observed >= SURGE_MIN && z >= SURGE_Z;
+		const streak = anomalous ? prev.streak + 1 : 0;
+		const surging = streak >= SURGE_CONFIRM;
+		const since = surging ? (prev.surge_since ?? now) : null;
+
+		// Freeze the baseline while anomalous so the spike can't inflate "normal".
+		let rate = prev.ewma_rate;
+		let varr = prev.ewma_var;
+		if (!anomalous) {
+			const diff = observed - rate;
+			rate = SURGE_ALPHA * observed + (1 - SURGE_ALPHA) * rate;
+			varr = (1 - SURGE_ALPHA) * (varr + SURGE_ALPHA * diff * diff);
+		}
+
+		writes.push(upsert.bind(id, rate, varr, surging ? 1 : 0, streak, since, now));
+		out.set(id, { serviceId: id, observed, baseline: prev.ewma_rate, z, surging, since: since ?? undefined });
+	}
+
+	await db.batch(writes);
+	return out;
 }
 
 // ---- Edge glue --------------------------------------------------------------

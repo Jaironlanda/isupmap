@@ -29,8 +29,17 @@ and a mobile-friendly detail sheet.
   reason (`Can't connect`, `Errors`, `Can't log in`, `Slow`, `Other`). Votes are
   deduplicated per IP-hash per 24 h, buffered through a Cloudflare Queue, and
   persisted in a separate D1. The per-service detail page shows aggregate counts,
-  a 7-day volume chart, per-country and per-reason breakdowns, and a
+  a **24-hour report-volume chart** (Downdetector-style line + faint area over a
+  shaded "typical range" band), per-country and per-reason breakdowns, and a
   **Protomaps world map** of recent report origins.
+- **Report-surge detection** — a Downdetector-style anomaly signal layered on the
+  community reports. Each cron run scores a service's recent report volume against
+  its own rolling baseline (EWMA mean + variance) and raises a **surge** when the
+  count is a statistical outlier (≥3σ), clears an absolute floor (≥5 reports), and
+  holds for 2 consecutive passes. A surging service is shown as a new **"Reported"**
+  status color (orange) and a **24h sparkline** on big tiles — supplementary only,
+  it never opens an incident or alters the authoritative probe status. See
+  [`detectSurges`](src/reports.ts).
 - **Command palette (⌘K)** — fuzzy-search services and run commands.
 - **Local customization** — show/hide services or categories and a
   "problems only" filter, persisted in `localStorage`.
@@ -50,6 +59,8 @@ Cron (every 5m) ─▶ scheduled() ─▶ resolveStatus() × N      ┌─▶ St
                        │                                          (service id, url, latency, status code, attempt)
                        ├─▶ persist to D1 (src/db.ts): flap-dampen → upsert `current`,
                        │   open/close `incidents`; daily retention sweep
+                       ├─▶ decorateReports() — surge detection + 24h sparkline from REPORTS_DB
+                       │   (supplementary; failure never blocks the status snapshot)
                        └─▶ publish finished snapshot to KV (SNAPSHOT_KV)
 Browser (public/) ─poll /api/status every 45s─▶ Worker reads KV (Cache-API fronted) ─▶ treemap + uptime
                   └─open detail / panel ───────▶ GET /api/incidents (D1, cached)     ─▶ incident history
@@ -60,7 +71,8 @@ User taps "Report it's down" ─▶ POST /api/report/:id (VOTE_RATE_LIMITER: 10/
                                         └─▶ queue consumer → batch-insert into REPORTS_DB (D1)
 GET /api/report/:id ─▶ KV hit (10-min TTL) → or D1 aggregate query → report JSON
                                                                        (total, countries, reasons,
-                                                                        recent 10, 7-day timeline)
+                                                                        recent 10, 7-day timeline,
+                                                                        24h hourly series, surge flag)
 /status/:id page ─▶ server-rendered with Protomaps world map (report locations) + analytics panel
 ```
 
@@ -79,7 +91,9 @@ GET /api/report/:id ─▶ KV hit (10-min TTL) → or D1 aggregate query → rep
   query on the hot path), with per-service **uptime (24h / 7d)**. It's fronted by
   the **Cache API**; before the first cron run it serves a "warming" snapshot
   (never a live fan-out). The response carries a `stale` flag (older than 3 cron
-  cycles) so the UI warns instead of showing frozen data.
+  cycles) so the UI warns instead of showing frozen data. Each service also carries
+  a supplementary `surge` flag and a 24h report-volume `spark` series (added by the
+  cron) that the UI uses for the **"Reported"** tile color and per-tile sparkline.
 - `GET /api/incidents` returns the recent incident log from D1 (Cache-API fronted). An
   optional `?service=<id>` filter scopes it to a single service.
 - `POST /api/report/:id` accepts a community down-report (`{ reason }`) for a known service.
@@ -87,8 +101,9 @@ GET /api/report/:id ─▶ KV hit (10-min TTL) → or D1 aggregate query → rep
   24 h, and enqueued to `VOTE_QUEUE` for async batch-insert into `REPORTS_DB`. Tighter rate
   limit: 10 req / 60s per IP (`VOTE_RATE_LIMITER`). Returns `503` if `VOTE_SALT` is not set.
 - `GET /api/report/:id` returns aggregated community-report data for a service: 7-day total,
-  per-country and per-reason breakdowns, up to 10 most-recent individual reports, and a
-  7-day daily volume timeline. Cached in `SNAPSHOT_KV` (`reportcount:<id>`) with a 10-min TTL.
+  per-country and per-reason breakdowns, up to 10 most-recent individual reports, a 7-day daily
+  volume timeline, a **24h hourly series** (for the report-volume chart), and the current **surge**
+  flag. Cached in `SNAPSHOT_KV` (`reportcount:<id>`) with a 10-min TTL.
 - `GET /api/summary` returns a single **overall-status rollup** (worst status
   wins) plus a headline (`"All systems operational"` / `"2 down, 1 degraded"`),
   per-status counts, and the same `stale` flag — handy for compact embeds, badges,
@@ -121,6 +136,12 @@ Every service is normalized to one of: `up` · `degraded` · `down` · `unknown`
 > Statuspage JSON is authoritative where available. RSS-based status is a
 > best-effort heuristic, since incident feeds describe history rather than a
 > current-state field.
+
+There is also a **display-only** fifth state, **`reported`** (orange): shown when
+the probe says `up`/`unknown` but community reports are surging (see
+[Report-surge detection](#features)). It's derived at render time from the `surge`
+flag and **never** replaces a service's real `status` — a confirmed `down`/`degraded`
+always wins, and incidents and uptime stay 100% probe-driven.
 
 ## Data sources
 
@@ -448,9 +469,9 @@ src/
   analytics.ts       logFetch() helper — writes per-attempt fetch events to the Analytics Engine dataset
   db.ts              D1 persistence: flap-dampening, snapshot upserts, incident transitions, uptime, retention
   pages.ts           Server-rendered status pages (/status, /status/<id>) + sitemap.xml
-  reports.ts         Community report write/read/aggregate logic (REPORTS_DB + SNAPSHOT_KV cache)
+  reports.ts         Community report logic: write/read/aggregate, 24h sparkline + surge detection (REPORTS_DB + SNAPSHOT_KV cache)
 schema.sql           D1 schema (current / incidents / meta / probe_state) + indexes
-schema-reports.sql   D1 schema for REPORTS_DB (reports table + index)
+schema-reports.sql   D1 schema for REPORTS_DB (reports + report_baseline tables + index)
 wrangler.jsonc       Worker config (main, assets, cron, D1 × 2, KV, Queues, rate limits × 2, Analytics Engine)
 ```
 
