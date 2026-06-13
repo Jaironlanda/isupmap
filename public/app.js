@@ -131,9 +131,12 @@ function renderView() {
 				? "✓ All selected services are operational"
 				: "No services selected — open Customize to add some.";
 		gridEl.innerHTML = `<p class="grid__empty">${escapeHtml(msg)}</p>`;
-		gridEl.classList.remove("grid--focus");
+		gridEl.classList.remove("grid--focus", "grid--solo");
 		return;
 	}
+	// Solo view (e.g. customized down to one service): the lone tile fills the
+	// grid, so let the sparkline scale up instead of staying capped + tiny.
+	gridEl.classList.toggle("grid--solo", v.length === 1);
 	render(v);
 }
 

@@ -1245,6 +1245,18 @@ body {
 	opacity: 0.16;
 }
 
+/* Solo view (a single service fills the grid): scale the sparkline up so it
+   reads as a proper chart instead of a thin capped strip at the bottom. */
+.grid--solo .tile__spark {
+	height: 30%;
+	max-height: 200px;
+	opacity: 1;
+}
+
+.grid--solo .tile__spark-line {
+	stroke-width: 2.2;
+}
+
 /* On a surging tile the fill is already the "reported" orange, so draw the line
    in a high-contrast white rather than a clashing accent. */
 .tile__spark-svg.is-surging .tile__spark-line {
