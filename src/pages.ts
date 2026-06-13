@@ -213,7 +213,11 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 	// Animated ECG "heartbeat" indicator — stroke colour follows the live status,
 	// and the hover tooltip reveals when the probe last ran.
 	const checked = formatUpdated(updatedAt);
-	const heartbeat = `<span class="sp-beat sp-beat--${display}" title="Checked ${escapeHtml(checked)}" aria-label="${beatLabel} — checked ${escapeHtml(checked)}">
+	// When surging, the indicator's hover tooltip explains the "Reported" state.
+	const beatTip = surging
+		? "Users are reporting problems — volume is spiking above normal."
+		: `Checked ${escapeHtml(checked)}`;
+	const heartbeat = `<span class="sp-beat sp-beat--${display}" title="${beatTip}" aria-label="${beatLabel} — checked ${escapeHtml(checked)}">
         <span class="sp-beat-label">${beatLabel}</span>
         <span class="sp-beat-dot" aria-hidden="true"></span>
       </span>`;

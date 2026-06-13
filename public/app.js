@@ -13,6 +13,9 @@ const STATUS_LABEL = {
 	reported: "Reported",
 };
 
+/** Hover-tooltip text on the "Reported" status indicator (dialog beat). */
+const SURGE_TIP = "Users are reporting problems — volume is spiking above normal.";
+
 /**
  * Display-only status: folds the community-report surge into the color a service
  * is shown with, WITHOUT touching `svc.status` (which still drives incidents and
@@ -1269,7 +1272,7 @@ function renderDetailHeader(svc) {
 				<div class="detail__svc-main">
 					<div class="detail__svc-top">
 						<span class="detail__svc-name">${escapeHtml(svc.name)}</span>
-						<span class="detail__beat detail__beat--${effStatus}">
+						<span class="detail__beat detail__beat--${effStatus}"${effStatus === "reported" ? ` title="${SURGE_TIP}"` : ""}>
 							<span class="detail__beat-label">${STATUS_LABEL[effStatus]}</span>
 							<span class="detail__beat-dot" aria-hidden="true"></span>
 						</span>

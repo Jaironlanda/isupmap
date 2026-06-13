@@ -440,22 +440,12 @@ function renderBreakdown(container, report) {
     return;
   }
 
-  const { total = 0, reasons = [], recent = [], hourly = [], countries = [], surge = false } = report;
+  const { total = 0, reasons = [], recent = [], hourly = [], countries = [] } = report;
 
   if (total === 0) {
     container.innerHTML = `<p class="report-widget__empty">No reports in the last 7 days.</p>`;
     return;
   }
-
-  // Surge banner: shown when community reports are spiking above this service's
-  // normal volume. Rendered inside the shared widget so the dialog and the
-  // /status page match. A user-perceived signal, distinct from official status.
-  const surgeHtml = surge
-    ? `<div class="report-surge" role="status">
-        <span class="report-surge__icon" aria-hidden="true">📈</span>
-        <span class="report-surge__text">Users are reporting problems — volume is spiking above normal.</span>
-      </div>`
-    : "";
 
   // Donut + legend, ordered by count desc.
   const ordered = [...reasons].filter((r) => r.count > 0).sort((a, b) => b.count - a.count);
@@ -484,7 +474,6 @@ function renderBreakdown(container, report) {
   }).join("");
 
   container.innerHTML = `
-    ${surgeHtml}
     <div class="report-donut">
       ${donutSvg(reasons, total)}
       <ul class="report-legend">${legendHtml}</ul>
