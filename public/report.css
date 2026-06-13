@@ -203,6 +203,7 @@
 
 /* Faster pulse when something is wrong. */
 .sp-beat--down .sp-beat-dot::after,
+.sp-beat--reported .sp-beat-dot::after,
 .sp-beat--degraded .sp-beat-dot::after { animation-duration: 1.1s; }
 /* No live pulse for an unknown status. */
 .sp-beat--unknown .sp-beat-dot { opacity: .5; }
@@ -415,6 +416,35 @@
 }
 
 /* Donut + legend */
+/* Surge banner: community reports spiking above normal. Warm amber (off the
+   green/amber/red status palette and not the old violet). Rendered inside the
+   report widget so the detail dialog and /status page share one design. */
+.report-surge {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #f0a868;
+  background: rgba(240, 136, 62, 0.12);
+  border: 1px solid rgba(240, 136, 62, 0.34);
+}
+
+.report-surge__icon {
+  flex: 0 0 auto;
+  font-size: 15px;
+}
+
+.report-surge__text {
+  min-width: 0;
+}
+
 .report-donut {
   display: flex;
   align-items: center;
@@ -533,15 +563,45 @@
 }
 
 /* 7d report-volume sparkline (bars) */
-.report-spark {
-  display: flex;
-  align-items: stretch;
-  gap: 3px;
-  height: 44px;
-  padding: 0;
+/* 24h report-volume line chart (Downdetector-style): a line + faint area over a
+   shaded "typical range" band. A row of invisible columns (.report-spark__col)
+   overlays it for per-hour hover tooltips. */
+.report-chart {
+  position: relative;
+  height: 58px;
 }
 
-/* Full-height hover/focus target per day bucket */
+.report-chart__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.report-chart__band {
+  fill: rgba(255, 255, 255, 0.07);
+}
+
+.report-chart__area {
+  fill: #22d3ee;
+  opacity: 0.14;
+}
+
+.report-chart__line {
+  fill: none;
+  stroke: #22d3ee;
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.report-chart__cols {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+/* Full-height hover/focus target per hour bucket */
 .report-spark__col {
   position: relative;
   flex: 1;

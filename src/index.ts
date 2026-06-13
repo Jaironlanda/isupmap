@@ -23,6 +23,7 @@ import {
 	normalizeReason,
 	pruneReports,
 	readCount,
+	reportSparklines,
 	writeCount,
 	type VoteMessage,
 } from "./reports";
@@ -174,24 +175,30 @@ async function refreshSnapshot(env: Env): Promise<number> {
 	await persistSnapshot(env.DB, statuses);
 	const snapshot = await readSnapshot(env.DB);
 	if (snapshot) {
-		await decorateSurges(env, snapshot.services);
+		await decorateReports(env, snapshot.services);
 		await env.SNAPSHOT_KV.put(SNAPSHOT_KEY, JSON.stringify(snapshot));
 	}
 	return statuses.length;
 }
 
 /**
- * Overlay the Community-Report surge flag onto the snapshot before it's published
- * to KV. This is a supplementary hint, not authoritative status — so a failure in
- * the (separate) reports DB must never block the status snapshot: on any error we
- * log and leave `surge` unset.
+ * Overlay the Community-Report signals (surge flag + 24h sparkline) onto the
+ * snapshot before it's published to KV. These are supplementary hints, not
+ * authoritative status — so a failure in the (separate) reports DB must never
+ * block the status snapshot: on any error we log and leave the fields unset.
  */
-async function decorateSurges(env: Env, services: ApiService[]): Promise<void> {
+async function decorateReports(env: Env, services: ApiService[]): Promise<void> {
 	try {
 		const surges = await detectSurges(env.REPORTS_DB);
-		for (const s of services) s.surge = surges.get(s.id)?.surging ?? false;
+		const sparks = await reportSparklines(env.REPORTS_DB);
+		for (const s of services) {
+			s.surge = surges.get(s.id)?.surging ?? false;
+			const spark = sparks.get(s.id);
+			// Only attach a series with real activity — a flat all-zero line is noise.
+			if (spark && spark.some((n) => n > 0)) s.spark = spark;
+		}
 	} catch (err) {
-		console.error("surge detection failed (non-fatal):", err);
+		console.error("report decoration failed (non-fatal):", err);
 	}
 }
 

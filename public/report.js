@@ -363,27 +363,54 @@ function getVotedReason(serviceId) {
 }
 
 /** Short date label for a day-bucket timestamp, e.g. "Jun 7". */
-function dayLabel(ts) {
-  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+function hourLabel(ts) {
+  return new Date(ts).toLocaleTimeString(undefined, { hour: "numeric" });
 }
 
-/** 7-day report-volume bar chart from the daily timeline. */
-function volumeChart(timeline) {
-  const total7 = timeline.reduce((s, p) => s + p.count, 0);
-  if (total7 === 0) {
-    return `<p class="report-section__empty">No reports in the last 7 days.</p>`;
+/**
+ * 24h report-volume chart from the hourly series: a Downdetector-style line +
+ * faint area, over a shaded "typical range" band (the 25th–75th percentile of
+ * the hour counts) so spikes above normal stand out. A row of invisible columns
+ * overlays the line to provide per-hour hover/focus tooltips.
+ */
+function volumeChart(hourly) {
+  const total = hourly.reduce((s, p) => s + p.count, 0);
+  if (total === 0) {
+    return `<p class="report-section__empty">No reports in the last 24 hours.</p>`;
   }
-  const max = Math.max(...timeline.map((p) => p.count), 1);
-  const bars = timeline.map((p) => {
-    const h = p.count === 0 ? 0 : Math.max(8, Math.round((p.count / max) * 100));
-    const tip = `${p.count} report${p.count === 1 ? "" : "s"} · ${dayLabel(p.t)}`;
-    // Full-height column is the hover/focus target so the whole bar slot is reachable.
-    return `<span class="report-spark__col" data-tip="${esc(tip)}" tabindex="0" role="img" aria-label="${esc(tip)}">
-      <span class="report-spark__bar${p.count ? "" : " is-empty"}" style="height:${h}%"></span>
-    </span>`;
-  }).join("");
-  return `<div class="report-spark" role="group" aria-label="Report volume over the last 7 days">${bars}</div>
-    <div class="report-spark__axis"><span>7d ago</span><span>today</span></div>`;
+  const values = hourly.map((p) => p.count);
+  const n = values.length;
+  const max = Math.max(...values, 1);
+  const PAD = 8; // top padding (viewBox units) so peaks aren't clipped
+  const y = (v) => 100 - PAD - (v / max) * (100 - PAD);
+  const line = values
+    .map((v, i) => `${(n <= 1 ? 0 : (i / (n - 1)) * 100).toFixed(1)},${y(v).toFixed(1)}`)
+    .join(" ");
+
+  // Typical-range band: 25th–75th percentile of the hourly counts.
+  const sorted = [...values].sort((a, b) => a - b);
+  const pct = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))];
+  const q1 = pct(0.25);
+  const q3 = Math.max(pct(0.75), q1 + 0.5); // keep the band visible even when flat
+  const bandTop = y(q3);
+  const bandH = Math.max(0, y(q1) - bandTop);
+
+  const cols = hourly
+    .map((p) => {
+      const tip = `${p.count} report${p.count === 1 ? "" : "s"} · ${hourLabel(p.t)}`;
+      return `<span class="report-spark__col" data-tip="${esc(tip)}" tabindex="0" role="img" aria-label="${esc(tip)}"></span>`;
+    })
+    .join("");
+
+  return `<div class="report-chart" role="group" aria-label="Report volume over the last 24 hours">
+      <svg class="report-chart__svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <rect class="report-chart__band" x="0" width="100" y="${bandTop.toFixed(1)}" height="${bandH.toFixed(1)}" />
+        <polygon class="report-chart__area" points="0,100 ${line} 100,100" />
+        <polyline class="report-chart__line" points="${line}" />
+      </svg>
+      <div class="report-chart__cols">${cols}</div>
+    </div>
+    <div class="report-spark__axis"><span>24h ago</span><span>now</span></div>`;
 }
 
 /** Top-5 countries by total reports, as labelled proportional bars. */
@@ -413,12 +440,22 @@ function renderBreakdown(container, report) {
     return;
   }
 
-  const { total = 0, reasons = [], recent = [], timeline = [], countries = [] } = report;
+  const { total = 0, reasons = [], recent = [], hourly = [], countries = [], surge = false } = report;
 
   if (total === 0) {
     container.innerHTML = `<p class="report-widget__empty">No reports in the last 7 days.</p>`;
     return;
   }
+
+  // Surge banner: shown when community reports are spiking above this service's
+  // normal volume. Rendered inside the shared widget so the dialog and the
+  // /status page match. A user-perceived signal, distinct from official status.
+  const surgeHtml = surge
+    ? `<div class="report-surge" role="status">
+        <span class="report-surge__icon" aria-hidden="true">📈</span>
+        <span class="report-surge__text">Users are reporting problems — volume is spiking above normal.</span>
+      </div>`
+    : "";
 
   // Donut + legend, ordered by count desc.
   const ordered = [...reasons].filter((r) => r.count > 0).sort((a, b) => b.count - a.count);
@@ -447,6 +484,7 @@ function renderBreakdown(container, report) {
   }).join("");
 
   container.innerHTML = `
+    ${surgeHtml}
     <div class="report-donut">
       ${donutSvg(reasons, total)}
       <ul class="report-legend">${legendHtml}</ul>
@@ -454,8 +492,8 @@ function renderBreakdown(container, report) {
     <p class="report-widget__total"><strong>${total}</strong> report${total === 1 ? "" : "s"} in the last 7 days</p>
 
     <hr class="report-rule" />
-    <p class="report-section__head">Report volume <span class="report-section__sub">7d</span></p>
-    ${volumeChart(timeline)}
+    <p class="report-section__head">Report volume <span class="report-section__sub">24h</span></p>
+    ${volumeChart(hourly)}
 
     <hr class="report-rule" />
     <p class="report-section__head">Top countries <span class="report-section__sub">7d</span></p>

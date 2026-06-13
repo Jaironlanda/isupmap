@@ -99,6 +99,12 @@ export interface ApiService {
 	 * supplementary — it never drives `status`/color, only a UI hint.
 	 */
 	surge?: boolean;
+	/**
+	 * 24h hourly report-volume series (oldest first) for the per-tile sparkline.
+	 * Omitted when a service has no reports in the window. Supplementary overlay
+	 * only (see reportSparklines in src/reports.ts).
+	 */
+	spark?: number[];
 }
 
 /**

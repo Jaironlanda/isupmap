@@ -52,8 +52,17 @@ const STATUS_COPY: Record<StatusLevel, StatusCopy> = {
 	unknown: { label: "Unknown", tone: "unknown", sentence: (n) => `${n}'s current status is unavailable.` },
 };
 
-const STATUS_COLOR: Record<StatusLevel, string> = {
+/**
+ * Display-only status: the authoritative {@link StatusLevel} plus a "reported"
+ * state used when the probe is up/unknown but community reports are surging.
+ * Mirrors `effectiveStatus()` on the frontend — it colors the page, never the
+ * SEO copy or any persisted record.
+ */
+type DisplayStatus = StatusLevel | "reported";
+
+const STATUS_COLOR: Record<DisplayStatus, string> = {
 	up: "#3fb950",
+	reported: "#f0883e",
 	degraded: "#d29922",
 	down: "#f85149",
 	unknown: "#8b949e",
@@ -183,7 +192,13 @@ ${opts.scripts ?? ""}
 export function renderServicePage(service: Service, current: ApiService | null, updatedAt: number | null, mapKey = "", showMap = true): string {
 	const status: StatusLevel = current?.status ?? "unknown";
 	const copy = STATUS_COPY[status];
-	const color = STATUS_COLOR[status];
+	// Display-only: a surging up/unknown service shows as "reported" (orange).
+	// SEO copy below stays on the authoritative `status` so meta never claims an
+	// unconfirmed, crowd-sourced problem.
+	const surging = !!current?.surge && (status === "up" || status === "unknown");
+	const display: DisplayStatus = surging ? "reported" : status;
+	const beatLabel = surging ? "Reported" : copy.label;
+	const color = STATUS_COLOR[display];
 	const name = service.name;
 
 	const title = `Is ${name} down? Live ${name} status — isUpMap`;
@@ -198,8 +213,8 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 	// Animated ECG "heartbeat" indicator — stroke colour follows the live status,
 	// and the hover tooltip reveals when the probe last ran.
 	const checked = formatUpdated(updatedAt);
-	const heartbeat = `<span class="sp-beat sp-beat--${status}" title="Checked ${escapeHtml(checked)}" aria-label="${copy.label} — checked ${escapeHtml(checked)}">
-        <span class="sp-beat-label">${copy.label}</span>
+	const heartbeat = `<span class="sp-beat sp-beat--${display}" title="Checked ${escapeHtml(checked)}" aria-label="${beatLabel} — checked ${escapeHtml(checked)}">
+        <span class="sp-beat-label">${beatLabel}</span>
         <span class="sp-beat-dot" aria-hidden="true"></span>
       </span>`;
 

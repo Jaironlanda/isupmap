@@ -19,8 +19,14 @@ export const REPORT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** One day, in ms — the bucket size for the 7-day report-volume timeline. */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** One hour, in ms — the bucket size for the 24h report-volume sparkline. */
+const HOUR_MS = 60 * 60 * 1000;
+
 /** Number of daily buckets in the report-volume timeline. */
 const TIMELINE_DAYS = 7;
+
+/** Number of hourly buckets in the 24h report-volume sparkline (tiles + chart). */
+export const SPARK_HOURS = 24;
 
 /** Delete reports older than this during the daily retention sweep. */
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -65,6 +71,10 @@ export interface Report {
 	recent: RecentReport[];
 	/** 7 daily buckets over the last 7 days, oldest first (report-volume chart). */
 	timeline: TimelinePoint[];
+	/** 24 hourly buckets over the last 24h, oldest first (Downdetector-style chart). */
+	hourly: TimelinePoint[];
+	/** Whether community reports are currently surging (anomaly confirmed). */
+	surge: boolean;
 }
 
 /** Internal queue message shape — not part of the public API. */
@@ -144,6 +154,11 @@ interface DayRow {
 	count: number;
 }
 
+interface HourRow {
+	hour: number;
+	count: number;
+}
+
 /**
  * Aggregate recent reports for a service over the trailing REPORT_WINDOW_MS.
  * Returns 7-day totals plus per-country and per-reason breakdowns, the 10 newest
@@ -155,8 +170,12 @@ export async function aggregateReports(db: D1Database, serviceId: string, now = 
 	const nowDay = Math.floor(now / DAY_MS);
 	const firstDay = nowDay - (TIMELINE_DAYS - 1);
 	const since7 = firstDay * DAY_MS;
+	// 24h sparkline aligned to hour boundaries.
+	const nowHour = Math.floor(now / HOUR_MS);
+	const firstHour = nowHour - (SPARK_HOURS - 1);
+	const since24 = firstHour * HOUR_MS;
 
-	const [byCountry, byReason, latest, byDay] = await db.batch([
+	const [byCountry, byReason, latest, byDay, byHour, baseline] = await db.batch([
 		db
 			.prepare(
 				"SELECT country AS label, COUNT(*) AS count FROM reports WHERE service_id = ? AND ts > ? GROUP BY country ORDER BY count DESC",
@@ -177,6 +196,12 @@ export async function aggregateReports(db: D1Database, serviceId: string, now = 
 				"SELECT ts / 86400000 AS day, COUNT(*) AS count FROM reports WHERE service_id = ? AND ts >= ? GROUP BY day",
 			)
 			.bind(serviceId, since7),
+		db
+			.prepare(
+				"SELECT ts / 3600000 AS hour, COUNT(*) AS count FROM reports WHERE service_id = ? AND ts >= ? GROUP BY hour",
+			)
+			.bind(serviceId, since24),
+		db.prepare("SELECT surge FROM report_baseline WHERE service_id = ?").bind(serviceId),
 	]);
 
 	const countries = (byCountry.results as CountRow[]).map((r) => ({ country: r.label, count: r.count }));
@@ -191,7 +216,48 @@ export async function aggregateReports(db: D1Database, serviceId: string, now = 
 		timeline.push({ t: d * DAY_MS, count: dayCounts.get(d) ?? 0 });
 	}
 
-	return { windowMs: REPORT_WINDOW_MS, total, countries, reasons, recent, timeline };
+	// Densify the sparse hour rows into a contiguous 24-bucket array (oldest first).
+	const hourCounts = new Map((byHour.results as HourRow[]).map((r) => [r.hour, r.count]));
+	const hourly: TimelinePoint[] = [];
+	for (let h = firstHour; h <= nowHour; h++) {
+		hourly.push({ t: h * HOUR_MS, count: hourCounts.get(h) ?? 0 });
+	}
+
+	const surge = ((baseline.results as { surge: number }[])[0]?.surge ?? 0) === 1;
+
+	return { windowMs: REPORT_WINDOW_MS, total, countries, reasons, recent, timeline, hourly, surge };
+}
+
+/**
+ * 24h hourly report-volume series for *every* service that has reports, in one
+ * query — the per-tile sparkline data folded into the snapshot by the cron.
+ * Returns a contiguous {@link SPARK_HOURS}-length array (oldest first) per
+ * service; services with no reports in the window are absent from the map.
+ */
+export async function reportSparklines(db: D1Database, now = Date.now()): Promise<Map<string, number[]>> {
+	const nowHour = Math.floor(now / HOUR_MS);
+	const firstHour = nowHour - (SPARK_HOURS - 1);
+	const since = firstHour * HOUR_MS;
+
+	const res = await db
+		.prepare("SELECT service_id, ts / 3600000 AS hour, COUNT(*) AS count FROM reports WHERE ts >= ? GROUP BY service_id, hour")
+		.bind(since)
+		.all<{ service_id: string; hour: number; count: number }>();
+
+	const byService = new Map<string, Map<number, number>>();
+	for (const r of res.results) {
+		const hours = byService.get(r.service_id) ?? new Map<number, number>();
+		hours.set(r.hour, r.count);
+		byService.set(r.service_id, hours);
+	}
+
+	const out = new Map<string, number[]>();
+	for (const [id, hours] of byService) {
+		const arr: number[] = [];
+		for (let h = firstHour; h <= nowHour; h++) arr.push(hours.get(h) ?? 0);
+		out.set(id, arr);
+	}
+	return out;
 }
 
 /** Delete reports older than the retention window. Returns the row count removed. */

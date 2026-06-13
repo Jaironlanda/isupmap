@@ -8,6 +8,8 @@ import {
 	normalizeReason,
 	pruneReports,
 	REPORT_WINDOW_MS,
+	reportSparklines,
+	SPARK_HOURS,
 	SURGE_BUCKET_MS,
 } from "../src/reports";
 import type { Surge, VoteMessage } from "../src/reports";
@@ -112,6 +114,34 @@ describe("insertReports / aggregateReports", () => {
 		expect(report.countries).toHaveLength(0);
 		expect(report.reasons).toHaveLength(0);
 		expect(report.recent).toHaveLength(0);
+	});
+
+	it("surfaces the surge flag from report_baseline", async () => {
+		const now = Date.now();
+		await insertReports(env.REPORTS_DB, [vote("svc-a", "h1", "US", "errors", now)]);
+		// No baseline row yet → not surging.
+		expect((await aggregateReports(env.REPORTS_DB, "svc-a", now)).surge).toBe(false);
+		// A confirmed surge in report_baseline → reflected in the report payload.
+		await env.REPORTS_DB.prepare(
+			"INSERT INTO report_baseline (service_id, ewma_rate, ewma_var, surge, streak, surge_since, updated_at) VALUES ('svc-a', 1, 1, 1, 2, ?, ?)",
+		).bind(now, now).run();
+		expect((await aggregateReports(env.REPORTS_DB, "svc-a", now)).surge).toBe(true);
+	});
+
+	it("returns a 24-bucket hourly volume series", async () => {
+		const now = Date.now();
+		const hour = 60 * 60 * 1000;
+		await insertReports(env.REPORTS_DB, [
+			vote("svc-a", "h1", "US", "errors", now),           // this hour
+			vote("svc-a", "h2", "GB", "slow", now),             // this hour
+			vote("svc-a", "h3", "US", "unreachable", now - hour), // last hour
+			vote("svc-a", "h4", "DE", "other", now - 50 * hour),  // outside 24h window
+		]);
+		const report = await aggregateReports(env.REPORTS_DB, "svc-a", now);
+
+		expect(report.hourly).toHaveLength(SPARK_HOURS);
+		expect(report.hourly.at(-1)?.count).toBe(2); // newest bucket: 2 this hour
+		expect(report.hourly.reduce((s, p) => s + p.count, 0)).toBe(3); // the 50h-old one is excluded
 	});
 
 	it("returns a 7-bucket daily volume timeline", async () => {
@@ -255,6 +285,39 @@ describe("detectSurges", () => {
 		}
 		expect(res.get("svc-a")?.surging).toBe(true);
 		expect(res.get("svc-b")?.surging).toBe(false);
+	});
+});
+
+describe("reportSparklines", () => {
+	const hour = 60 * 60 * 1000;
+
+	it("returns a 24-bucket series per service with reports, oldest first", async () => {
+		const now = Date.now();
+		await insertReports(env.REPORTS_DB, [
+			vote("svc-a", "a1", "US", "errors", now),
+			vote("svc-a", "a2", "GB", "slow", now),
+			vote("svc-a", "a3", "US", "errors", now - hour),
+			vote("svc-b", "b1", "DE", "errors", now),
+		]);
+		const sparks = await reportSparklines(env.REPORTS_DB, now);
+
+		const a = sparks.get("svc-a");
+		expect(a).toHaveLength(SPARK_HOURS);
+		expect(a?.at(-1)).toBe(2); // newest hour
+		expect(a?.at(-2)).toBe(1); // previous hour
+		expect(a?.reduce((s, n) => s + n, 0)).toBe(3);
+		expect(sparks.get("svc-b")?.at(-1)).toBe(1);
+	});
+
+	it("omits services with no reports in the 24h window", async () => {
+		const now = Date.now();
+		await insertReports(env.REPORTS_DB, [
+			vote("svc-a", "old", "US", "errors", now - 50 * hour), // outside window
+			vote("svc-b", "new", "US", "errors", now),
+		]);
+		const sparks = await reportSparklines(env.REPORTS_DB, now);
+		expect(sparks.has("svc-a")).toBe(false);
+		expect(sparks.has("svc-b")).toBe(true);
 	});
 });
 
