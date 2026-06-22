@@ -181,6 +181,7 @@ export const SERVICES: Service[] = [
 	{ id: "atlassian", name: "Atlassian", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.atlassian.com" } },
 	{ id: "dropbox", name: "Dropbox", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.dropbox.com" } },
 	{ id: "datadog", name: "Datadog", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.datadoghq.com" } },
+	{ id: "datadog-eu", name: "Datadog (EU)", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.datadoghq.eu" } },
 	{ id: "figma", name: "Figma", category: "Productivity & Media", weight: 6, source: { type: "statuspage", base: "https://status.figma.com" } },
 	{ id: "box", name: "Box", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.box.com" } },
 	{ id: "squarespace", name: "Squarespace", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.squarespace.com" } },
