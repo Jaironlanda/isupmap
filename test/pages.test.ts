@@ -62,6 +62,23 @@ describe("renderServicePage", () => {
 		expect(html).not.toContain("<img src=x");
 		expect(html).toContain("&lt;img src=x");
 	});
+
+	it("renders the 90-day uptime strip only when history is provided", () => {
+		const history = [
+			{ date: "2026-07-02", uptime: 1, worst: "up" as const },
+			{ date: "2026-07-03", uptime: 0.958, worst: "down" as const },
+			{ date: "2026-07-04", uptime: 0.99, worst: "degraded" as const },
+		];
+		const html = renderServicePage(svc, apiService(svc.id, "up"), 1000, "", true, history);
+		expect(html).toContain("3-day uptime"); // heading reflects the window length
+		expect((html.match(/sp-ubar /g) ?? []).length).toBe(3); // one bar per day
+		expect(html).toContain("sp-ubar--down");
+		expect(html).toContain(`title="Jul 3 — 95.8%"`);
+		expect(html).toContain("98.27%"); // window average of the three days
+
+		const without = renderServicePage(svc, apiService(svc.id, "up"), 1000);
+		expect(without).not.toContain("sp-uptime-bars");
+	});
 });
 
 describe("findService", () => {

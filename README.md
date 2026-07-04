@@ -25,6 +25,10 @@ and a mobile-friendly detail sheet.
   **"Visit status page"** link.
 - **Incident history** — server-recorded incidents (open/close/duration),
   persisted in D1 and shown in a side panel and per-service (last 2 shown).
+- **90-day uptime history** — Statuspage-style daily bars (colored by each day's
+  worst incident status, with per-day uptime tooltips) plus the window average,
+  derived from the incident log. Shown in the detail modal and on the SSR
+  `/status/<id>` pages.
 - **Community "report it's down"** — users can vote a service is down with a
   reason (`Can't connect`, `Errors`, `Can't log in`, `Slow`, `Other`). Votes are
   deduplicated per IP-hash per 24 h, buffered through a Cloudflare Queue, and
@@ -45,6 +49,10 @@ and a mobile-friendly detail sheet.
   "problems only" filter, persisted in `localStorage`.
 - **Notifications** — in-page toasts on status changes, plus optional opt-in
   **desktop notifications**.
+- **Atom incident feeds** — subscribe to outages in any feed reader (or an
+  RSS-to-alert tool): [`/feed.xml`](https://isupmap.com/feed.xml) covers every
+  service, `/status/<id>/feed.xml` covers one. Entries update in place when an
+  incident resolves ("Resolved: GitHub was down for 25m").
 - **Light / dark theme**, deep links (`?service=`, `?filter=problems`), and a
   favicon/title that reflect overall state.
 
@@ -96,6 +104,20 @@ GET /api/report/:id ─▶ KV hit (10-min TTL) → or D1 aggregate query → rep
   cron) that the UI uses for the **"Reported"** tile color and per-tile sparkline.
 - `GET /api/incidents` returns the recent incident log from D1 (Cache-API fronted). An
   optional `?service=<id>` filter scopes it to a single service.
+- `GET /api/uptime/:id` returns a **90-day daily uptime series** for one service
+  (`{ date, uptime, worst }` per UTC day, oldest first, plus a `uptime90` window
+  average), computed from incident intervals — `degraded` counts against uptime,
+  matching the 24h/7d numbers. Same Cache-API + rate-limit fronting as
+  `/api/incidents` (5-min TTL). Approximations: days before a service was added
+  read 100%, and an incident whose severity changed carries its final status for
+  the whole interval.
+- `GET /feed.xml` (and per-service `GET /status/<id>/feed.xml`) serves the same
+  incident log as an **Atom feed** for feed readers and RSS-to-alert tools. Entry
+  ids are permanent and `<updated>` moves on resolution, so readers show recovery
+  as an update to the same item rather than a duplicate. The dashboard and SSR
+  pages advertise the feeds via `<link rel="alternate">` autodiscovery. Cache-API
+  fronted with a 5-min edge TTL (the cron cadence), so aggressive polling never
+  reaches D1.
 - `POST /api/report/:id` accepts a community down-report (`{ reason }`) for a known service.
   The IP is hashed with `VOTE_SALT` (SHA-256; never stored raw), deduplicated per IP-hash per
   24 h, and enqueued to `VOTE_QUEUE` for async batch-insert into `REPORTS_DB`. Tighter rate
@@ -403,6 +425,8 @@ curl "http://localhost:8787/__scheduled"      # runs scheduled() once → persis
 curl -s http://localhost:8787/api/status | jq # served from KV, includes per-service uptime + stale flag
 curl -s http://localhost:8787/api/incidents | jq
 curl -s http://localhost:8787/api/summary | jq # overall status rollup + headline
+curl -s http://localhost:8787/api/uptime/github | jq # 90-day daily uptime series
+curl -s http://localhost:8787/feed.xml         # Atom feed of the incident log
 ```
 
 > **Local cron note:** under plain `wrangler dev`, the documented
@@ -463,7 +487,7 @@ public/            Static frontend (served directly by Cloudflare)
   images/            OG image + self-hosted service icons (logo/services/<id>.png)
   lib/               Vendored MapLibre GL and Protomaps basemap assets (world map rendering)
 src/
-  index.ts           Worker entry: scheduled() cron + rate-limited/cached /api/* + SSR /status pages & /sitemap.xml
+  index.ts           Worker entry: scheduled() cron + rate-limited/cached /api/* + SSR /status pages, /sitemap.xml & Atom /feed.xml
   services.ts        Curated service list + status data sources + shared types
   sources.ts         Per-source-type fetch + normalize (Statuspage/RSS/HTTP); logs each attempt to AE
   analytics.ts       logFetch() helper — writes per-attempt fetch events to the Analytics Engine dataset
