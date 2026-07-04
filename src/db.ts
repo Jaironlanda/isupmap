@@ -247,6 +247,57 @@ export async function readSnapshot(db: D1Database, now = Date.now()): Promise<{ 
 	return { updatedAt: lastRun ? Number(lastRun.value) : null, services };
 }
 
+/** One day of the 90-day uptime history (see {@link dailyUptime}). */
+export interface DailyUptime {
+	/** UTC calendar day, e.g. "2026-07-04". */
+	date: string;
+	/** Operational fraction (0..1) for the day; today is measured over elapsed time only. */
+	uptime: number;
+	/** Worst incident status overlapping the day (`up` when incident-free). */
+	worst: "up" | "degraded" | "down";
+}
+
+/**
+ * Per-UTC-day uptime for one service over the trailing `days` window, derived
+ * from incident intervals like {@link uptimeFraction} (so `degraded` counts
+ * against uptime too). Oldest day first; the last entry is today, measured over
+ * the elapsed part of the day. Approximations: days before a service was added
+ * read 100% (there's no first-seen marker), and an incident whose severity
+ * changed carries its final status for the whole interval (the row is updated
+ * in place).
+ */
+export async function dailyUptime(db: D1Database, serviceId: string, days = 90, now = Date.now()): Promise<DailyUptime[]> {
+	// Epoch ms are UTC-midnight aligned, so flooring to DAY_MS yields UTC midnight.
+	const todayStart = Math.floor(now / DAY_MS) * DAY_MS;
+	const windowStart = todayStart - (days - 1) * DAY_MS;
+
+	const rows = await db
+		.prepare("SELECT status, started_at, ended_at FROM incidents WHERE service_id = ? AND (ended_at IS NULL OR ended_at >= ?)")
+		.bind(serviceId, windowStart)
+		.all<{ status: StatusLevel; started_at: number; ended_at: number | null }>();
+
+	const result: DailyUptime[] = [];
+	for (let i = 0; i < days; i++) {
+		const dayStart = windowStart + i * DAY_MS;
+		const dayEnd = Math.min(dayStart + DAY_MS, now);
+		const elapsed = dayEnd - dayStart;
+		let downtime = 0;
+		let worst: DailyUptime["worst"] = "up";
+		for (const iv of rows.results) {
+			const start = Math.max(iv.started_at, dayStart);
+			const end = Math.min(iv.ended_at ?? now, dayEnd);
+			if (end <= start) continue;
+			downtime += end - start;
+			if (iv.status === "down") worst = "down";
+			else if (worst === "up") worst = "degraded";
+		}
+		// `elapsed` is 0 only when `now` is exactly UTC midnight; an empty day is fully up.
+		const uptime = elapsed > 0 ? Math.min(1, Math.max(0, 1 - downtime / elapsed)) : 1;
+		result.push({ date: new Date(dayStart).toISOString().slice(0, 10), uptime, worst });
+	}
+	return result;
+}
+
 /**
  * Most recent incidents (newest first), joined with the service name.
  * Pass `serviceId` to restrict to a single service (used by the detail sheet).

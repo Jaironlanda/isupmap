@@ -10,13 +10,16 @@
  *   - `/status`       — a directory of every tracked service, grouped by category.
  *   - `/sitemap.xml`  — the homepage plus every service page, generated from
  *                       {@link SERVICES} so it can never drift from the catalog.
+ *   - `/feed.xml` and `/status/<id>/feed.xml` — Atom feeds of the incident log,
+ *                       so any feed reader (or RSS-to-alert tool) can subscribe
+ *                       to outages without polling the JSON API.
  *
  * Pages are pure HTML with inline CSS and no scripts, so they render instantly
  * and need no client runtime. Status/uptime data is passed in by the caller
  * (read from D1), keeping this module free of bindings and easy to unit-test.
  */
 
-import type { ApiService } from "./db";
+import type { ApiService, DailyUptime, IncidentRecord } from "./db";
 import { SERVICES, type Service, type StatusLevel } from "./services";
 
 /** Canonical origin for <link rel=canonical>, OG tags, and the sitemap. */
@@ -144,6 +147,7 @@ isUpMap checks ${SERVICES.length}+ services every few minutes. Status reflects t
 <meta name="twitter:description" content="${escapeHtml(opts.description)}" />
 <meta name="twitter:image" content="${CANONICAL_ORIGIN}/images/og-map.png" />
 <link rel="icon" type="image/png" href="/images/logo/icon/favicon-32x32.png" />
+<link rel="alternate" type="application/atom+xml" title="isUpMap — service incidents" href="${CANONICAL_ORIGIN}/feed.xml" />
 <script type="application/ld+json">${JSON.stringify(opts.jsonLd)}</script>
 <style>
 :root { color-scheme: dark; }
@@ -179,6 +183,36 @@ ${opts.scripts ?? ""}
 </html>`;
 }
 
+/** "100%", "99.2%", "97.53%" — up to two decimals, trailing zeros dropped. */
+function formatPercent(fraction: number): string {
+	return `${Math.round(fraction * 10_000) / 100}%`;
+}
+
+/** Short UTC day label for bar tooltips, e.g. "Jul 3". */
+function formatDay(date: string): string {
+	return new Date(`${date}T00:00:00Z`).toLocaleString("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
+}
+
+/**
+ * The 90-day uptime card: a strip of per-day bars (colored by the day's worst
+ * incident status, uptime in the hover tooltip) plus the window average.
+ */
+function renderUptimeCard(history: DailyUptime[]): string {
+	const avg = history.reduce((sum, d) => sum + d.uptime, 0) / history.length;
+	const bars = history
+		.map((d) => `<span class="sp-ubar sp-ubar--${d.worst}" title="${formatDay(d.date)} — ${formatPercent(d.uptime)}"></span>`)
+		.join("");
+	return `
+      <section class="sp-card sp-card--uptime">
+        <div class="sp-uptime-head">
+          <h2 class="sp-uptime-title">${history.length}-day uptime</h2>
+          <span class="sp-uptime-agg">${formatPercent(avg)}</span>
+        </div>
+        <div class="sp-uptime-bars" role="img" aria-label="Daily uptime over the last ${history.length} days: ${formatPercent(avg)} average">${bars}</div>
+        <div class="sp-uptime-scale" aria-hidden="true"><span>${history.length} days ago</span><span>Today</span></div>
+      </section>`;
+}
+
 /**
  * Full HTML for a single service's status page.
  *
@@ -188,8 +222,10 @@ ${opts.scripts ?? ""}
  * MapLibre/Protomaps assets it needs — are skipped entirely and the details
  * panel is centered, saving the heavy map download and tile requests.
  * `mapKey` is the Protomaps API key (empty string disables the GL map).
+ * `history` (per-UTC-day uptime, oldest first) renders the 90-day bar strip;
+ * omit it (or pass an empty array) to skip the card entirely.
  */
-export function renderServicePage(service: Service, current: ApiService | null, updatedAt: number | null, mapKey = "", showMap = true): string {
+export function renderServicePage(service: Service, current: ApiService | null, updatedAt: number | null, mapKey = "", showMap = true, history?: DailyUptime[]): string {
 	const status: StatusLevel = current?.status ?? "unknown";
 	const copy = STATUS_COPY[status];
 	// Display-only: a surging up/unknown service shows as "reported" (orange).
@@ -252,6 +288,10 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 		],
 	};
 
+	// Statuspage-style 90-day uptime strip: one class-colored bar per UTC day
+	// (pure HTML/CSS — the page CSP allows no scripts beyond the report widget).
+	const uptimeCard = history?.length ? renderUptimeCard(history) : "";
+
 	// Scrollable info panel — shared by both the two-column (with map) and the
 	// centered solo (no map) layouts.
 	const panel = `
@@ -290,7 +330,7 @@ export function renderServicePage(service: Service, current: ApiService | null, 
           <span class="sp-ext-arrow" aria-hidden="true">↗</span>
         </a>
       </section>
-
+${uptimeCard}
       <section class="sp-card" data-report-widget data-service-id="${escapeHtml(service.id)}"></section>
 
       <footer>
@@ -323,7 +363,7 @@ export function renderServicePage(service: Service, current: ApiService | null, 
 		jsonLd,
 		body,
 		noWrap: true,
-		extraHead: `${mapCss}<link rel="stylesheet" href="/report.css" /><style>html,body{height:100%;overflow:hidden}</style>`,
+		extraHead: `${mapCss}<link rel="stylesheet" href="/report.css" /><link rel="alternate" type="application/atom+xml" title="${escapeHtml(name)} incidents — isUpMap" href="${canonical}/feed.xml" /><style>html,body{height:100%;overflow:hidden}</style>`,
 		scripts: `${mapJs}<script src="/report.js" type="module"></script>`,
 	});
 }
@@ -399,4 +439,70 @@ export function renderSitemap(): string {
 		.map((u) => `\t<url>\n\t\t<loc>${u.loc}</loc>\n\t\t<changefreq>${u.changefreq}</changefreq>\n\t\t<priority>${u.priority}</priority>\n\t</url>`)
 		.join("\n");
 	return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`;
+}
+
+/** Human-readable duration for feed copy, e.g. "45m", "3h 20m", "2d 5h". */
+function formatDuration(ms: number): string {
+	const minutes = Math.max(1, Math.round(ms / 60_000));
+	if (minutes < 60) return `${minutes}m`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 48) return `${hours}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`;
+	const days = Math.floor(hours / 24);
+	return `${days}d${hours % 24 ? ` ${hours % 24}h` : ""}`;
+}
+
+/**
+ * Atom feed of the incident log — the whole map (`/feed.xml`) or a single
+ * service (`/status/<id>/feed.xml` when `service` is given). Atom over RSS 2.0
+ * because it has unambiguous timestamps and required entry ids.
+ *
+ * Entry ids are permanent (`/status/<sid>#incident-<row id>`), and `<updated>`
+ * moves when an incident resolves — so readers show recovery as an update to
+ * the same item rather than a duplicate. Incidents come from the caller (D1's
+ * {@link IncidentRecord}), keeping this module free of bindings.
+ */
+export function renderIncidentFeed(incidents: IncidentRecord[], service?: Service, now = Date.now()): string {
+	const feedUrl = service ? `${CANONICAL_ORIGIN}/status/${service.id}/feed.xml` : `${CANONICAL_ORIGIN}/feed.xml`;
+	const htmlUrl = service ? `${CANONICAL_ORIGIN}/status/${service.id}` : `${CANONICAL_ORIGIN}/`;
+	const title = service ? `${service.name} incidents — isUpMap` : "isUpMap — service incidents";
+	const subtitle = service
+		? `Outages and degraded-performance incidents for ${service.name}, detected by isUpMap's automated probes.`
+		: `Outages and degraded-performance incidents across the ${SERVICES.length}+ services isUpMap tracks.`;
+
+	// Feed-level <updated>: the newest activity in any entry (resolution counts), or `now` when empty.
+	const latest = incidents.reduce((max, i) => Math.max(max, i.endedAt ?? i.startedAt), 0);
+
+	const entries = incidents
+		.map((i) => {
+			const name = i.serviceName ?? i.serviceId;
+			const label = i.status === "down" ? "down" : "degraded";
+			const resolved = i.endedAt != null;
+			const entryTitle = resolved ? `Resolved: ${name} was ${label} for ${formatDuration(i.endedAt! - i.startedAt)}` : `${name} is ${label}`;
+			const when = resolved
+				? `Started ${formatUpdated(i.startedAt)}, resolved ${formatUpdated(i.endedAt!)}.`
+				: `Started ${formatUpdated(i.startedAt)}; ongoing as of the latest probe.`;
+			const summary = `${i.description ? `${i.description} — ` : ""}${when}`;
+			return `\t<entry>
+\t\t<title>${escapeHtml(entryTitle)}</title>
+\t\t<link href="${CANONICAL_ORIGIN}/status/${escapeHtml(i.serviceId)}"/>
+\t\t<id>${CANONICAL_ORIGIN}/status/${escapeHtml(i.serviceId)}#incident-${i.id}</id>
+\t\t<published>${new Date(i.startedAt).toISOString()}</published>
+\t\t<updated>${new Date(i.endedAt ?? i.startedAt).toISOString()}</updated>
+\t\t<summary>${escapeHtml(summary)}</summary>
+\t</entry>`;
+		})
+		.join("\n");
+
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+\t<title>${escapeHtml(title)}</title>
+\t<subtitle>${escapeHtml(subtitle)}</subtitle>
+\t<link href="${feedUrl}" rel="self" type="application/atom+xml"/>
+\t<link href="${htmlUrl}"/>
+\t<id>${feedUrl}</id>
+\t<updated>${new Date(latest || now).toISOString()}</updated>
+\t<author><name>isUpMap</name></author>
+${entries}
+</feed>
+`;
 }
