@@ -11,8 +11,8 @@
  *   - `GET /api/incidents`: recent incident log.
  */
 
-import { persistSnapshot, pruneIncidents, readSnapshot, recentIncidents, type ApiService } from "./db";
-import { findService, renderNotFound, renderServicePage, renderSitemap, renderStatusIndex } from "./pages";
+import { dailyUptime, persistSnapshot, pruneIncidents, readSnapshot, recentIncidents, type ApiService } from "./db";
+import { findService, renderIncidentFeed, renderNotFound, renderServicePage, renderSitemap, renderStatusIndex } from "./pages";
 import {
 	aggregateReports,
 	countryOf,
@@ -387,6 +387,29 @@ export default {
 			return resp;
 		}
 
+		// 90-day daily uptime history for one service (the detail modal's bar strip).
+		// Same shape as /api/incidents: one indexed D1 query, per-colo cached. A 5-min
+		// TTL matches the cron cadence (only today's bar can move between runs).
+		const uptimeMatch = url.pathname.match(/^\/api\/uptime\/([a-z0-9-]+)\/?$/);
+		if (uptimeMatch) {
+			const service = findService(uptimeMatch[1]);
+			if (!service) return json({ error: "Not found" }, { status: 404 });
+
+			const cache = caches.default;
+			const cacheKey = new Request(new URL(`/api/uptime/${service.id}`, url.origin).toString(), { method: "GET" });
+			const hit = await cache.match(cacheKey);
+			if (hit) return hit;
+
+			const limited = await rateLimit(request, env);
+			if (limited) return limited;
+
+			const days = await dailyUptime(env.DB, service.id);
+			const uptime90 = days.reduce((sum, d) => sum + d.uptime, 0) / days.length;
+			const resp = json({ serviceId: service.id, days, uptime90 }, { headers: { "cache-control": "public, max-age=300" } });
+			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			return resp;
+		}
+
 		// Community report routes (/api/report/:id).
 		const reportMatch = url.pathname.match(/^\/api\/report\/([a-z0-9-]+)\/?$/);
 		if (reportMatch) {
@@ -458,6 +481,31 @@ export default {
 			return resp;
 		}
 
+		// Atom incident feeds: /feed.xml (all services) and /status/<id>/feed.xml
+		// (one service). Same D1 read as /api/incidents, fronted by the per-colo
+		// cache + rate limit; a 5-min edge TTL matches the cron cadence, so feed
+		// readers polling aggressively never touch D1 more than once per cycle.
+		const feedMatch = url.pathname.match(/^\/(?:status\/([a-z0-9-]+)\/)?feed\.xml$/);
+		if (feedMatch) {
+			const service = feedMatch[1] ? findService(feedMatch[1]) : undefined;
+			if (feedMatch[1] && !service) return new Response("Not found", { status: 404 });
+
+			const cache = caches.default;
+			const cacheKey = new Request(new URL(url.pathname, url.origin).toString(), { method: "GET" });
+			const hit = await cache.match(cacheKey);
+			if (hit) return hit;
+
+			const limited = await rateLimit(request, env);
+			if (limited) return limited;
+
+			const incidents = await recentIncidents(env.DB, 50, service?.id);
+			const resp = markup(renderIncidentFeed(incidents, service), "application/atom+xml; charset=utf-8", {
+				headers: { "cache-control": "public, max-age=300" },
+			});
+			ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+			return resp;
+		}
+
 		// Crawlable sitemap, generated from SERVICES so it never drifts.
 		if (url.pathname === "/sitemap.xml") {
 			return markup(renderSitemap(), "application/xml; charset=utf-8", { headers: { "cache-control": "public, max-age=3600" } });
@@ -507,8 +555,14 @@ export default {
 				ctx.waitUntil(writeCount(env.SNAPSHOT_KV, service.id, reportSummary));
 			}
 			const showMap = reportSummary.total > 0 && Boolean(env.PROTOMAPS_KEY);
+			// 90-day uptime strip. One indexed D1 query behind the page's per-colo
+			// cache; a failure only drops the card, never the page.
+			const history = await dailyUptime(env.DB, service.id).catch((err) => {
+				console.error("uptime history failed (non-fatal):", err);
+				return undefined;
+			});
 			const resp = markup(
-				renderServicePage(service, current, snapshot.updatedAt, env.PROTOMAPS_KEY ?? "", showMap),
+				renderServicePage(service, current, snapshot.updatedAt, env.PROTOMAPS_KEY ?? "", showMap, history),
 				"text/html; charset=utf-8",
 				{},
 				{ allowSelfScripts: true, allowMap: showMap },

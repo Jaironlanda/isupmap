@@ -123,6 +123,54 @@
   border-color: color-mix(in srgb, var(--status) 24%, rgba(255, 255, 255, .08));
 }
 
+/* ---- 90-day uptime card: one bar per UTC day, colored by worst status ---- */
+
+.sp-uptime-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 10px;
+}
+
+.sp-uptime-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #8b949e;
+  margin: 0;
+}
+
+.sp-uptime-agg {
+  font-size: 15px;
+  font-weight: 700;
+  color: #e6edf3;
+}
+
+.sp-uptime-bars {
+  display: flex;
+  gap: 2px;
+  height: 28px;
+}
+
+.sp-ubar {
+  flex: 1;
+  min-width: 0;
+  border-radius: 2px;
+  background: #3fb950;
+}
+
+.sp-ubar--degraded { background: #d29922; }
+.sp-ubar--down { background: #f85149; }
+
+.sp-uptime-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #8b949e;
+}
+
 /* Service identity row: logo · name/category · heartbeat */
 .sp-svc {
   display: flex;

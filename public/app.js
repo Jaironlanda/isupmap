@@ -1209,6 +1209,19 @@ async function openDetail(svc) {
 	if (widgetEl && window.isupReport) {
 		window.isupReport.mount(widgetEl, svc.id, { status: svc.status });
 	}
+	// 90-day uptime history: kicked off alongside the incidents fetch below and
+	// rendered whenever it lands. Section stays hidden until data arrives (and on
+	// error) — same no-flash rule as incident history.
+	fetch(`/api/uptime/${encodeURIComponent(svc.id)}`, { headers: { accept: "application/json" } })
+		.then((res) => res.json())
+		.then((data) => {
+			// Guard against a slow response after the user reopened a different service.
+			if (detailId !== svc.id) return;
+			if (data && Array.isArray(data.days) && data.days.length) renderDetailUptime(data);
+		})
+		.catch(() => {
+			/* leave the section hidden on error — nothing to show */
+		});
 	// Incident history for this service: the 2 most recent, queried per-service.
 	// The whole section stays hidden unless there's at least one incident (no
 	// flash while loading, no empty-state filler).
@@ -1286,6 +1299,16 @@ function renderDetailHeader(svc) {
 		<div class="detail__report-card">
 			<div data-report-widget data-service-id="${escapeHtml(svc.id)}"></div>
 		</div>
+		<section class="detail__uptime" hidden>
+			<div class="detail__section-head">
+				<h3 class="detail__subhead">90-day uptime</h3>
+				<span class="detail__uptime-agg"></span>
+			</div>
+			<div class="detail__uptime-body">
+				<div class="detail__uptime-bars"></div>
+				<div class="detail__uptime-scale" aria-hidden="true"><span>90 days ago</span><span>Today</span></div>
+			</div>
+		</section>
 		<section class="detail__history" hidden>
 			<div class="detail__section-head">
 				<h3 class="detail__subhead">Incident history</h3>
@@ -1305,6 +1328,20 @@ function renderDetailHeader(svc) {
 	// Render Lucide icons injected by the template.
 	const newIcons = [...detailBody.querySelectorAll("i[data-lucide]")];
 	if (newIcons.length) lucide.createIcons({ nodes: newIcons });
+}
+
+// Fill the (hidden) uptime section with one class-colored bar per UTC day and
+// the window average, then reveal it. `data` is the /api/uptime/:id payload.
+function renderDetailUptime(data) {
+	const section = detailBody.querySelector(".detail__uptime");
+	if (!section) return;
+	const pct = (fraction) => `${Math.round(fraction * 10000) / 100}%`;
+	const day = (date) => new Date(`${date}T00:00:00Z`).toLocaleString("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
+	section.querySelector(".detail__uptime-agg").textContent = pct(data.uptime90);
+	section.querySelector(".detail__uptime-bars").innerHTML = data.days
+		.map((d) => `<span class="detail__ubar is-${escapeHtml(String(d.worst))}" title="${day(String(d.date))} — ${pct(d.uptime)}"></span>`)
+		.join("");
+	section.hidden = false;
 }
 
 function renderDetailIncidents(incidents) {
