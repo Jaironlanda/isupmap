@@ -19,12 +19,12 @@
     "db:schema:reports:remote": "wrangler d1 execute isupmap-reports --remote --file=./schema-reports.sql"
   },
   "dependencies": {
-    "fast-xml-parser": "^5.9.2"
+    "fast-xml-parser": "^5.9.3"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.18.0",
+    "@cloudflare/vitest-pool-workers": "^0.18.2",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9",
+    "vitest": "^4.1.10",
     "wrangler": "^4.107.0"
   }
 }
