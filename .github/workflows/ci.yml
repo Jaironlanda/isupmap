@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # deploy.yml calls this to gate every staging/production deploy on it.
+  workflow_call:
 
 jobs:
   check:

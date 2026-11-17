@@ -415,7 +415,9 @@ GROUP BY service ORDER BY errors DESC LIMIT 20;
 | `npm run dev:cron` | Dev server with `--test-scheduled` so the cron can be triggered locally. |
 | `npm run types` | Regenerate Worker types (`wrangler types`) after editing `wrangler.jsonc`. |
 | `npm run typecheck` | `tsc --noEmit`. |
-| `npm run deploy` | Deploy to Cloudflare. |
+| `npm run deploy` | Deploy to Cloudflare using `wrangler.jsonc`. |
+| `npm run deploy:staging` / `deploy:prod` | Check, test, apply schemas and deploy with `wrangler.staging.jsonc` / `wrangler.prod.jsonc` (normally done by the tag-driven workflow). |
+| `npm run check:staging-config` / `check:prod-config` | Fail if that config has drifted from `wrangler.jsonc`. |
 
 Trigger the cron and inspect the API locally:
 
@@ -465,6 +467,47 @@ npm run db:schema:reports:remote                                 # applies schem
 > Set `PROTOMAPS_KEY` (via `wrangler secret put` or in `wrangler.jsonc`) to
 > enable the world map on `/status/:id` pages. A free key is available at
 > [protomaps.com](https://protomaps.com). Leave it empty to skip the map.
+
+### Continuous deploy (GitHub Actions)
+
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) deploys from
+**tags**, with two deliberately different paths:
+
+```bash
+# Staging — automatic: any tag containing "staging" ships on push.
+git tag v1.4.0-staging && git push origin v1.4.0-staging
+
+# Production — manual: a plain v* tag is only recorded. Ship it explicitly,
+# retyping the tag as confirmation.
+git tag v1.4.0 && git push origin v1.4.0
+gh workflow run deploy.yml --ref v1.4.0 -f confirm_tag=v1.4.0
+```
+
+Each deploy runs CI (typecheck + tests), checks the environment's config for
+drift, applies both D1 schemas, then runs `wrangler deploy --config <file>`.
+Merging to `main` only runs CI — it never deploys.
+
+Each environment has its own gitignored config with its own Worker `name`,
+D1 databases, KV namespace, queues and Analytics Engine dataset — staging must
+not share resources with production. Copy `wrangler.jsonc` to
+`wrangler.staging.jsonc` / `wrangler.prod.jsonc`, fill in real ids, then create
+two GitHub Environments (`staging`, `production`) with these secrets:
+
+| Secret | Value |
+|--------|-------|
+| `CLOUDFLARE_API_TOKEN` | API token with Workers Scripts, D1, Workers KV Storage and Queues **Edit** |
+| `CLOUDFLARE_ACCOUNT_ID` | Your account id |
+| `WRANGLER_STAGING_CONFIG` (staging) | `gh secret set WRANGLER_STAGING_CONFIG --env staging < wrangler.staging.jsonc` |
+| `WRANGLER_PROD_CONFIG` (production) | `gh secret set WRANGLER_PROD_CONFIG --env production < wrangler.prod.jsonc` |
+
+Optionally set a `PUBLIC_URL` environment variable on each so the run links to
+the deployed site, and restrict the `production` environment to `v*` tags.
+Re-run `gh secret set` after editing either config. The deploy fails if the
+config's bindings, crons or `compatibility_date` have drifted from
+`wrangler.jsonc` (`npm run check:staging-config` / `check:prod-config` check this
+locally). For a manual deploy from your machine, use `npm run deploy:staging` /
+`deploy:prod`. On a fork, change the `github.repository` check in the workflow
+to your repo.
 
 ### Rate-limit binding
 

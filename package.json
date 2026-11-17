@@ -6,6 +6,10 @@
   },
   "scripts": {
     "deploy": "wrangler deploy && wrangler d1 execute isupmap --remote --file=./schema.sql",
+    "deploy:prod": "npm run check:prod-config && npm run typecheck && npm test && wrangler d1 execute DB --remote -c wrangler.prod.jsonc --file=./schema.sql && wrangler d1 execute REPORTS_DB --remote -c wrangler.prod.jsonc --file=./schema-reports.sql && wrangler deploy -c wrangler.prod.jsonc",
+    "deploy:staging": "npm run check:staging-config && npm run typecheck && npm test && wrangler d1 execute DB --remote -c wrangler.staging.jsonc --file=./schema.sql && wrangler d1 execute REPORTS_DB --remote -c wrangler.staging.jsonc --file=./schema-reports.sql && wrangler deploy -c wrangler.staging.jsonc",
+    "check:prod-config": "node scripts/check-prod-config.mjs",
+    "check:staging-config": "node scripts/check-prod-config.mjs wrangler.staging.jsonc",
     "dev": "wrangler dev",
     "dev:cron": "wrangler dev --test-scheduled",
     "start": "wrangler dev",
