@@ -863,64 +863,123 @@ describe("disabled services", () => {
 	});
 });
 
-describe("Mistral AI (http)", () => {
-	const pingUrl = "https://status.mistral.ai";
-	const statusUrl = "https://status.mistral.ai";
-	const mistral: Service = {
-		id: "mistral",
-		name: "Mistral AI",
-		category: "AI",
-		weight: 6,
-		source: { type: "http", url: pingUrl, statusUrl },
-	};
-	const resolve = () => resolveStatus(mistral);
-
-	it("is up when the status page returns 200 (all clear)", async () => {
-		fetchSpy.mockResolvedValue(reply("<!DOCTYPE html><html>OK</html>", 200));
-		const r = await resolve();
-		expect(r.status).toBe("up");
-		// Pings the configured URL.
-		expect(fetchSpy.mock.calls[0][0]).toBe(pingUrl);
-		// statusUrl must be surfaced so "Visit status page" links correctly.
-		expect(r.details?.url).toBe(statusUrl);
-	});
-
-	it("is down when the status page returns 500 (server error)", async () => {
-		// Two calls: first attempt + one retry (both 5xx).
-		fetchSpy.mockResolvedValue(reply("Internal Server Error", 500));
-		const r = await resolve();
-		expect(r.status).toBe("down");
-		expect(r.details?.url).toBe(statusUrl);
+describe("Mistral AI (Statuspage-compatible JSON)", () => {
+	it("reads summary.json off status.mistral.ai instead of pinging the challenged HTML", async () => {
+		fetchSpy.mockResolvedValue(
+			reply(
+				JSON.stringify({
+					page: { id: "ae27f3c4-86a4-4290-a053-87252545d7f9", name: "Mistral AI Status", url: "https://status.mistral.ai", updated_at: "2026-10-15T11:30:27-07:00" },
+					status: { indicator: "minor", description: "Minor Service Outage" },
+					components: [
+						{ id: "c1", name: "Completion API", status: "degraded_performance" },
+						{ id: "c2", name: "Embedding API", status: "operational" },
+					],
+					incidents: [],
+				}),
+			),
+		);
+		const r = await resolveStatus(svc({ type: "statuspage", base: "https://status.mistral.ai" }));
+		expect(fetchSpy.mock.calls[0][0]).toBe("https://status.mistral.ai/api/v2/summary.json");
+		expect(r.status).toBe("degraded");
+		expect(r.details?.components?.impacted).toEqual(["Completion API"]);
 	});
 });
 
-describe("DeepSeek (http)", () => {
-	const pingUrl = "https://status.deepseek.com";
-	const statusUrl = "https://status.deepseek.com";
-	const deepseek: Service = {
-		id: "deepseek",
-		name: "DeepSeek",
-		category: "AI",
-		weight: 7,
-		source: { type: "http", url: pingUrl, statusUrl },
-	};
-	const resolve = () => resolveStatus(deepseek);
+describe("DeepSeek RSS feed (Flashduty)", () => {
+	const url = "https://status.deepseek.com/history.rss";
+	const resolve = () => resolveStatus(svc({ type: "rss", url, statusUrl: "https://status.deepseek.com" }));
+	// Flashduty entity-encodes the HTML body and puts markup between "Status:" and the state.
+	function feed(state: string) {
+		const body = `&lt;p&gt;&lt;strong&gt;Status:&lt;/strong&gt; ${state}&lt;/p&gt;&lt;p&gt;We are aware of degraded performance.&lt;/p&gt;&lt;p&gt;&lt;strong&gt;Affected components:&lt;/strong&gt; 对话服务(Chatservice)&lt;/p&gt;`;
+		return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>DeepSeek</title><item><title>DeepSeek 网页/Chat 性能下降（DeepSeek Web/Chat Degraded Performance）</title><link>https://status.deepseek.com/incidents/1</link><description>${body}</description><pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`;
+	}
 
-	it("is up when the status page returns 200 (all clear)", async () => {
-		fetchSpy.mockResolvedValue(reply("<!DOCTYPE html><html>OK</html>", 200));
+	it("reads a resolved incident as up despite the problem wording in the body", async () => {
+		fetchSpy.mockResolvedValue(reply(feed("resolved")));
 		const r = await resolve();
+		expect(fetchSpy.mock.calls[0][0]).toBe(url);
 		expect(r.status).toBe("up");
-		// Pings the configured URL.
-		expect(fetchSpy.mock.calls[0][0]).toBe(pingUrl);
-		// statusUrl must be surfaced so "Visit status page" links correctly.
-		expect(r.details?.url).toBe(statusUrl);
+		expect(r.details?.url).toBe("https://status.deepseek.com");
 	});
 
-	it("is down when the status page returns 500 (server error)", async () => {
-		// Two calls: first attempt + one retry (both 5xx).
-		fetchSpy.mockResolvedValue(reply("Internal Server Error", 500));
-		const r = await resolve();
+	it("reads an investigating incident as active", async () => {
+		fetchSpy.mockResolvedValue(reply(feed("investigating")));
+		expect((await resolve()).status).toBe("down");
+	});
+
+	it("reads monitoring as recovering (up)", async () => {
+		fetchSpy.mockResolvedValue(reply(feed("monitoring")));
+		expect((await resolve()).status).toBe("up");
+	});
+});
+
+describe("rss titleTags (status.x.ai shared by Grok and Cursor)", () => {
+	const url = "https://status.x.ai/feed.xml";
+	const item = (title: string, status: string, ageMin: number) =>
+		`<item><title>${title}</title><description><![CDATA[<h3>Status: ${status}</h3><p>Severity: disruption</p>]]></description><pubDate>${new Date(Date.now() - ageMin * 60_000).toUTCString()}</pubDate><link>https://status.x.ai/x/1</link></item>`;
+	const feed = (...items: string[]) => `<?xml version="1.0"?><rss version="2.0"><channel><title>SpaceXAI System Status</title>${items.join("")}</channel></rss>`;
+	const grok = svc({ type: "rss", url, titleTags: ["grok.com", "Global (api.x.ai)"] });
+	const cursor = svc({ type: "rss", url, titleTags: ["Cursor IDE (Desktop)", "cursor.com"] });
+
+	it("keeps another product's newer incident off this tile", async () => {
+		fetchSpy.mockImplementation(async () => reply(feed(item("[Cursor IDE (Desktop)] Elevated latency for composer", "INVESTIGATING", 5), item("[grok.com] Grok Degradation", "RESOLVED", 60))));
+		expect((await resolveStatus(grok)).status).toBe("up");
+		const c = await resolveStatus(cursor);
+		expect(c.status).toBe("degraded");
+		expect(c.description).toBe("[Cursor IDE (Desktop)] Elevated latency for composer");
+	});
+
+	it("matches tags case-insensitively and shows a shared incident on both tiles", async () => {
+		fetchSpy.mockImplementation(async () => reply(feed(item("[CURSOR.COM] Elevated errors", "INVESTIGATING", 5), item("[Global (api.x.ai)] Elevated errors", "INVESTIGATING", 5))));
+		expect((await resolveStatus(cursor)).status).toBe("degraded");
+		expect((await resolveStatus(grok)).status).toBe("degraded");
+	});
+
+	it("is up with no recent incidents when no entry carries one of its tags", async () => {
+		fetchSpy.mockImplementation(async () => reply(feed(item("[Voice] Enterprise Voice Degraded", "INVESTIGATING", 5), item("Untagged incident", "INVESTIGATING", 5))));
+		const r = await resolveStatus(cursor);
+		expect(r.status).toBe("up");
+		expect(r.description).toBe("No recent incidents reported");
+	});
+});
+
+describe("statuspage components allowlist (Replicate on cloudflarestatus.com)", () => {
+	const base = "https://www.cloudflarestatus.com";
+	const replicate = svc({ type: "statuspage", base, components: ["Replicate"], statusUrl: `${base}/services?search=replicate` });
+	function summary(o: { replicate: string; others?: string; incidents?: unknown[] }) {
+		return JSON.stringify({
+			page: { id: "yh6f0r4529hb", url: base, updated_at: "2026-11-17T00:00:00Z" },
+			status: { indicator: "major", description: "Major Service Outage" },
+			components: [
+				{ id: "g-svc", name: "Cloudflare Sites and Services", group: true, status: "major_outage" },
+				{ id: "c-rep", name: "Replicate", status: o.replicate, group_id: "g-svc" },
+				{ id: "c-cdn", name: "CDN/Cache", status: o.others ?? "major_outage", group_id: "g-svc" },
+				{ id: "pop-1", name: "London - (LHR)", status: "partial_outage", group_id: "g-eu" },
+			],
+			incidents: o.incidents ?? [],
+		});
+	}
+	const incident = (name: string, impact: string, componentIds: string[]) => ({ name, impact, updated_at: new Date().toISOString(), components: componentIds.map((id) => ({ id })) });
+
+	it("ignores the rest of Cloudflare's page when Replicate is operational", async () => {
+		fetchSpy.mockResolvedValue(reply(summary({ replicate: "operational", incidents: [incident("CDN outage", "critical", ["c-cdn"]), incident("Page-wide notice", "major", [])] })));
+		const r = await resolveStatus(replicate);
+		expect(r.status).toBe("up");
+		expect(r.description).toBe("All Systems Operational");
+		expect(r.details?.components).toEqual({ operational: 1, total: 1, impacted: [] });
+		expect(r.details?.incident).toBeUndefined();
+		expect(r.details?.url).toBe(`${base}/services?search=replicate`);
+	});
+
+	it("reflects the Replicate component and incidents naming it", async () => {
+		fetchSpy.mockResolvedValue(reply(summary({ replicate: "major_outage", others: "operational", incidents: [incident("Replicate predictions failing", "major", ["c-rep"])] })));
+		const r = await resolveStatus(replicate);
 		expect(r.status).toBe("down");
-		expect(r.details?.url).toBe(statusUrl);
+		expect(r.description).toBe("Replicate predictions failing");
+	});
+
+	it("reads degraded for a minor incident on Replicate", async () => {
+		fetchSpy.mockResolvedValue(reply(summary({ replicate: "degraded_performance", incidents: [incident("Slow cold boots", "minor", ["c-rep", "c-cdn"])] })));
+		expect((await resolveStatus(replicate)).status).toBe("degraded");
 	});
 });

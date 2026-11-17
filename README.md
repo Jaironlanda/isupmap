@@ -218,11 +218,11 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Firecrawl | Developer & Cloud | RSS | `https://status.firecrawl.dev/feed.rss` |
 | OpenAI | AI | RSS | `https://status.openai.com/feed.rss` |
 | Anthropic | AI | Statuspage | `https://status.claude.com` |
-| xAI | AI | RSS | `https://status.x.ai/feed.xml` |
+| xAI | AI | RSS (Grok-tagged entries) | `https://status.x.ai/feed.xml` |
 | Groq | AI | Statuspage | `https://groqstatus.com` |
 | ElevenLabs | AI | Statuspage | `https://status.elevenlabs.io` |
 | Cohere | AI | Statuspage | `https://status.cohere.com` |
-| Replicate | AI | Statuspage | `https://www.replicatestatus.com` |
+| Replicate | AI | Statuspage (`Replicate` component) | `https://www.cloudflarestatus.com` |
 | Pinecone | AI | Statuspage | `https://status.pinecone.io` |
 | Runway | AI | Statuspage | `https://status.runwayml.com` |
 | Hugging Face | AI | RSS | `https://status.huggingface.co/feed.rss` |
@@ -231,11 +231,11 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Stability AI | AI | Statuspage | `https://status.stability.ai` |
 | Deepgram | AI | Statuspage | `https://status.deepgram.com` |
 | AssemblyAI | AI | Statuspage | `https://status.assemblyai.com` |
-| Cursor | AI | RSS | `https://status.cursor.com/history.rss` |
+| Cursor | AI | RSS (Cursor-tagged entries) | `https://status.x.ai/feed.xml` |
 | Cerebras | AI | Statuspage | `https://status.cerebras.ai` |
 | Fireworks AI | AI | RSS | `https://status.fireworks.ai/feed.rss` |
-| DeepSeek | AI | Statuspage | `https://status.deepseek.com` |
-| Mistral AI | AI | HTTP ping | `https://status.mistral.ai` |
+| DeepSeek | AI | RSS | `https://status.deepseek.com/history.rss` |
+| Mistral AI | AI | Statuspage | `https://status.mistral.ai` |
 | Stripe | Payments | Statuspage | `https://www.stripestatus.com` |
 | Coinbase | Payments | Statuspage | `https://status.coinbase.com` |
 | Shopify | Payments | Statuspage | `https://www.shopifystatus.com` |
