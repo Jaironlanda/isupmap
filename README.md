@@ -155,6 +155,8 @@ Every service is normalized to one of: `up` · `degraded` · `down` · `unknown`
 | **RSS / Atom** | Parses the latest feed entry (via `fast-xml-parser`). Entries older than 48h are treated as resolved (`up`). A fresh entry mentioning *resolved/restored/operational* → `up`; *outage/down/major/critical* → `down`; anything else fresh → `degraded`. An explicit title state wins over the body: a `…: Resolved` suffix (Appwrite) or a `RESOLVED: …` prefix (GCP/Firebase, whose resolved bodies are incident reports). Heuristic. |
 | **HTTP ping**  | A plain `GET`. `2xx`/`3xx` → `up`; other response → `degraded`; network error or timeout → `down`. |
 | **DocuSign** | Reads DocuSign's status-center JSON (`components.json` + `incidents.json`). The indicator is the worst of the `product` components and every active incident's impact (`performance_degradation`→minor, `service_disruption`→major, maintenance in progress→maintenance), then mapped with the Statuspage breadth rules. |
+| **status.io** | Reads `api.status.io/1.0/status/{pageId}`: the worst of the overall code and every component's code (100 operational, 200 maintenance, 300/400 degraded or partial disruption, 500 service disruption), mapped with the Statuspage breadth rules. |
+| **PlayStation** | Reads `status.playstation.com/data/statuses/region/{region}.json` for each region. A country is affected when any of its service / resource `status` arrays holds a live entry; an `Outage` reads `down` only when it hits half the counted countries, else `degraded`. `ignoreCountries` skips standing restrictions (Russia). |
 | **AWS Health** | Reads the AWS Health Dashboard's public current-events JSON (served as UTF-16). An event is *active* when its latest update isn't the resolution marker and is under 48h old; long-running events with no recent updates are listed in the note but don't color the tile. Active → `degraded`; a disruption that is global, hits "Multiple services", or spans 2+ regions → `down`. |
 | *(any)*        | A failed fetch or timeout → `unknown` (treated as "no data" — never opens an incident or counts as downtime). |
 
@@ -274,9 +276,9 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Twitch | Gaming & Entertainment | Statuspage | `https://status.twitch.com` |
 | Epic Games | Gaming & Entertainment | Statuspage | `https://status.epicgames.com` |
 | Netflix | Gaming & Entertainment | HTTP ping | `https://www.netflix.com` |
-| Roblox | Gaming & Entertainment | RSS | `https://status.roblox.com/pages/59db90dbcdeb2f04dadcf16d/rss` |
+| Roblox | Gaming & Entertainment | status.io | `https://api.status.io/1.0/status/59db90dbcdeb2f04dadcf16d` |
 | Steam | Gaming & Entertainment | HTTP ping | `https://store.steampowered.com` |
-| PlayStation Network | Gaming & Entertainment | HTTP ping | `https://www.playstation.com` |
+| PlayStation Network | Gaming & Entertainment | PlayStation (SCEA, SCEE, SCEJA; ignores RU) | `https://status.playstation.com` |
 | Riot Games | Gaming & Entertainment | HTTP ping | `https://www.riotgames.com` |
 | Spotify | Gaming & Entertainment | HTTP ping | `https://open.spotify.com` |
 | X (Twitter) | Social Media | HTTP ping | `https://x.com` |

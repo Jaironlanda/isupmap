@@ -766,6 +766,145 @@ async function fetchDocusign(service: Service, url: string, ctx?: FetchCtx): Pro
 	});
 }
 
+interface StatusioItem {
+	name?: string;
+	status?: string;
+	status_code?: number;
+	updated?: string;
+	containers?: StatusioItem[];
+}
+
+interface StatusioResult {
+	status_overall?: StatusioItem;
+	status?: StatusioItem[];
+	incidents?: { name?: string }[];
+	maintenance?: { active?: { name?: string }[] };
+}
+
+/** status.io status codes → the equivalent Statuspage indicator. */
+const STATUSIO_INDICATOR: Record<number, string> = {
+	100: "none", // Operational
+	200: "maintenance", // Planned Maintenance
+	300: "minor", // Degraded Performance
+	400: "minor", // Partial Service Disruption
+	500: "major", // Service Disruption
+	600: "minor", // Security Event
+};
+
+/**
+ * status.io public status API (`api.status.io/1.0/status/{pageId}`): an
+ * authoritative overall code plus per-component ("container") codes grouped by
+ * audience. The indicator is the worst of the overall and container codes,
+ * mapped with the Statuspage breadth rules over the containers.
+ */
+async function fetchStatusio(service: Service, pageId: string, ctx?: FetchCtx): Promise<ServiceStatus> {
+	const src = service.source as Extract<ServiceSource, { type: "statusio" }>;
+	const res = await fetchWithRetry(`https://api.status.io/1.0/status/${pageId}`, {}, ctx);
+	if (!res.ok) return result(service, "unknown", `Status API returned HTTP ${res.status}`);
+	const data = ((await res.json()) as { result?: StatusioResult }).result ?? {};
+	const level = (code?: number) => (code == null ? "none" : (STATUSIO_INDICATOR[code] ?? "minor"));
+
+	const containers = (data.status ?? []).flatMap((g) => (g.containers ?? []).map((c) => ({ name: `${g.name ?? ""} · ${c.name ?? ""}`, code: c.status_code })));
+	const impacted = containers.filter((c) => level(c.code) !== "none").map((c) => c.name);
+	const majorOutages = containers.filter((c) => level(c.code) === "major").length;
+	let indicator = level(data.status_overall?.status_code);
+	for (const c of containers) indicator = worstIndicator(indicator, level(c.code));
+
+	const status = statuspageStatus(indicator, containers.length, majorOutages);
+	const incident = data.incidents?.[0]?.name;
+	const maintenance = data.maintenance?.active?.[0]?.name;
+	const description =
+		indicator === "none" ? "All Systems Operational" : (incident ?? maintenance ?? data.status_overall?.status ?? (impacted.length ? `Impacted: ${impacted.join(", ")}` : indicator));
+	return result(service, status, description, {
+		url: src.statusUrl,
+		updatedAt: data.status_overall?.updated,
+		components: containers.length ? { operational: containers.length - impacted.length, total: containers.length, impacted } : undefined,
+		incident: incident ? { name: incident } : maintenance ? { name: maintenance, impact: "maintenance" } : undefined,
+	});
+}
+
+interface PsnStatus {
+	statusType?: string;
+	modifiedDate?: string;
+}
+
+interface PsnService {
+	serviceName?: string;
+	status?: PsnStatus[];
+	resources?: { status?: PsnStatus[] }[];
+}
+
+interface PsnRegion {
+	countries?: { countryCode?: string; countryName?: string; status?: PsnStatus[]; services?: PsnService[] }[];
+}
+
+/**
+ * PlayStation Network (status.playstation.com): one JSON file per region
+ * (`data/statuses/region/{SCEA|SCEE|SCEJA}.json`), each listing countries →
+ * services → resources, every level carrying a `status` array that is empty
+ * when healthy and holds `{ statusType: "Outage" | … }` entries otherwise.
+ * A country is affected when any of its levels has a live (updated within
+ * {@link STALE_INCIDENT_MS}) entry. Breadth is measured in countries: an outage
+ * reads `down` only when it hits half of them, else `degraded`. Countries in
+ * `ignoreCountries` are skipped — standing restrictions (e.g. Russia's store and
+ * account "outages") would otherwise pin the tile. Region-level `status` is
+ * ignored since it echoes its countries' entries.
+ */
+async function fetchPlaystation(service: Service, ctx?: FetchCtx): Promise<ServiceStatus> {
+	const src = service.source as Extract<ServiceSource, { type: "playstation" }>;
+	const ignore = new Set((src.ignoreCountries ?? []).map((c) => c.toUpperCase()));
+	const regions = await Promise.all(
+		src.regions.map(async (r) => {
+			try {
+				const res = await fetchWithRetry(`https://status.playstation.com/data/statuses/region/${r}.json`, {}, ctx);
+				return res.ok ? ((await res.json()) as PsnRegion) : null;
+			} catch {
+				return null;
+			}
+		}),
+	);
+	if (regions.every((r) => r == null)) return result(service, "unknown", "Status API unreachable");
+
+	const now = Date.now();
+	const live = (list?: PsnStatus[]) => (list ?? []).filter((x) => !(x.modifiedDate != null && now - Date.parse(x.modifiedDate) >= STALE_INCIDENT_MS));
+	let total = 0;
+	let outageCountries = 0;
+	let indicator = "none";
+	const impacted: string[] = [];
+	const services = new Set<string>();
+	for (const region of regions) {
+		for (const c of region?.countries ?? []) {
+			if (ignore.has((c.countryCode ?? "").toUpperCase())) continue;
+			total++;
+			const entries = [...live(c.status)];
+			for (const svc of c.services ?? []) {
+				const svcEntries = [...live(svc.status), ...(svc.resources ?? []).flatMap((r) => live(r.status))];
+				if (svcEntries.length) services.add(svc.serviceName ?? "Unknown service");
+				entries.push(...svcEntries);
+			}
+			if (!entries.length) continue;
+			impacted.push(c.countryName ?? c.countryCode ?? "Unknown");
+			const types = entries.map((e) => (e.statusType ?? "").toLowerCase());
+			if (types.includes("outage")) outageCountries++;
+			for (const t of types) indicator = worstIndicator(indicator, t === "outage" ? "major" : t.includes("maint") ? "maintenance" : "minor");
+		}
+	}
+
+	const status = statuspageStatus(indicator, total, outageCountries);
+	const failed = src.regions.filter((_, i) => regions[i] == null);
+	const notes = [
+		...(failed.length ? [`Region data unavailable: ${failed.join(", ")}`] : []),
+		...(ignore.size ? [`Not counted: ${[...ignore].join(", ")}`] : []),
+	];
+	const description =
+		indicator === "none" ? "All services are up and running" : `${[...services].join(", ") || "Issues"} — ${impacted.length} ${impacted.length === 1 ? "country" : "countries"}`;
+	return result(service, status, description, {
+		url: src.statusUrl ?? "https://status.playstation.com",
+		components: total ? { operational: total - impacted.length, total, impacted } : undefined,
+		note: notes.length ? notes.join("; ") : undefined,
+	});
+}
+
 /**
  * Codes that mean "the server answered, it just refused this probe" — bot walls
  * and method/auth gates that big consumer sites serve to datacenter egress
@@ -814,6 +953,10 @@ export async function resolveStatus(service: Service, ae?: AnalyticsEngineDatase
 				return await fetchAwsHealth(service, service.source.url, ctx);
 			case "docusign":
 				return await fetchDocusign(service, service.source.url, ctx);
+			case "statusio":
+				return await fetchStatusio(service, service.source.pageId, ctx);
+			case "playstation":
+				return await fetchPlaystation(service, ctx);
 		}
 	} catch (err) {
 		const reason = err instanceof Error && err.name === "AbortError" ? "Timed out" : "Unreachable";

@@ -14,6 +14,8 @@
  *                   new events in Sep 2026).
  *   - `docusign`:   DocuSign's status-center JSON (status.docusign.com moved
  *                   off Statuspage to health.docusign.com in 2026).
+ *   - `statusio`:   status.io's public status API (overall + per-component codes).
+ *   - `playstation`: PlayStation Network's per-region status JSON.
  *
  * `weight` is a relative prominence used to size tiles in the treemap (the
  * stock-map look) — bigger services get bigger tiles. It carries no meaning
@@ -36,7 +38,10 @@ export type ServiceSource =
 	| { type: "rss"; url: string; statusUrl?: string; titleTags?: string[] }
 	| { type: "http"; url: string; statusUrl?: string } // statusUrl overrides when the ping URL isn't the status page
 	| { type: "aws-health"; url: string; statusUrl?: string } // AWS Health Dashboard current-events JSON
-	| { type: "docusign"; url: string; statusUrl?: string }; // DocuSign status center JSON (components.json + incidents.json under url)
+	| { type: "docusign"; url: string; statusUrl?: string } // DocuSign status center JSON (components.json + incidents.json under url)
+	| { type: "statusio"; pageId: string; statusUrl?: string } // status.io public API (api.status.io/1.0/status/{pageId})
+	// PlayStation status JSON per region; ignoreCountries skips standing country restrictions.
+	| { type: "playstation"; regions: string[]; ignoreCountries?: string[]; statusUrl?: string };
 
 export interface Service {
 	id: string;
@@ -242,12 +247,14 @@ export const SERVICES: Service[] = [
 	// Netflix has no public status API (its "is-netflix-down" page is JS-rendered),
 	// so we fall back to a reachability ping of the main site.
 	{ id: "netflix", name: "Netflix", category: "Gaming & Entertainment", weight: 9, source: { type: "http", url: "https://www.netflix.com" } },
-	// Roblox uses status.io — RSS is the reliable path.
-	{ id: "roblox", name: "Roblox", category: "Gaming & Entertainment", weight: 8, source: { type: "rss", url: "https://status.roblox.com/pages/59db90dbcdeb2f04dadcf16d/rss" } },
+	// Roblox uses status.io — its public API gives authoritative overall and per-component codes.
+	{ id: "roblox", name: "Roblox", category: "Gaming & Entertainment", weight: 8, source: { type: "statusio", pageId: "59db90dbcdeb2f04dadcf16d", statusUrl: "https://status.roblox.com" } },
 	// The services below lack a public status JSON/RSS feed, so we fall back to reachability pings.
 	{ id: "steam", name: "Steam", category: "Gaming & Entertainment", weight: 8, source: { type: "http", url: "https://store.steampowered.com" } },
-	// PlayStation and Riot have dedicated status pages even though their feeds aren't machine-readable.
-	{ id: "playstation", name: "PlayStation Network", category: "Gaming & Entertainment", weight: 7, source: { type: "http", url: "https://www.playstation.com", statusUrl: "https://status.playstation.com" } },
+	// status.playstation.com serves per-region JSON (Americas, Europe, Japan/Asia). Russia carries
+	// standing store/account "outages" (Sony's restrictions there), so it's not counted.
+	{ id: "playstation", name: "PlayStation Network", category: "Gaming & Entertainment", weight: 7, source: { type: "playstation", regions: ["SCEA", "SCEE", "SCEJA"], ignoreCountries: ["RU"], statusUrl: "https://status.playstation.com" } },
+	// Riot's status page is per game and per shard (CDN JSON) — no single feed, so ping the site.
 	{ id: "riot", name: "Riot Games", category: "Gaming & Entertainment", weight: 6, source: { type: "http", url: "https://www.riotgames.com", statusUrl: "https://status.riotgames.com" } },
 	{ id: "spotify", name: "Spotify", category: "Gaming & Entertainment", weight: 9, source: { type: "http", url: "https://open.spotify.com" } },
 
