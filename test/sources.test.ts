@@ -851,6 +851,28 @@ describe("Docker (incident.io Statuspage-compatible JSON)", () => {
 	});
 });
 
+describe("Lemon Squeezy RSS feed (Oh Dear)", () => {
+	const url = "https://status.lemonsqueezy.com/rss";
+	const resolve = () => resolveStatus(svc({ type: "rss", url, statusUrl: "https://status.lemonsqueezy.com" }));
+	// Oh Dear posts monitor events with empty bodies and ISO-8601 pubDates.
+	const item = (title: string, ageMin: number) =>
+		`<item><title><![CDATA[${title}]]></title><link>https://status.lemonsqueezy.com</link><description><![CDATA[]]></description><pubDate>${new Date(Date.now() - ageMin * 60_000).toISOString()}</pubDate></item>`;
+	const feed = (...items: string[]) => `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title><![CDATA[Lemon Squeezy Status]]></title>${items.join("")}</channel></rss>`;
+
+	it("is down while a monitor 'appears to be down'", async () => {
+		fetchSpy.mockResolvedValue(reply(feed(item("Checkout appears to be down.", 5))));
+		const r = await resolve();
+		expect(fetchSpy.mock.calls[0][0]).toBe(url);
+		expect(r.status).toBe("down");
+		expect(r.details?.url).toBe("https://status.lemonsqueezy.com");
+	});
+
+	it("is up once the newest event says it 'has recovered'", async () => {
+		fetchSpy.mockResolvedValue(reply(feed(item("Checkout has recovered.", 2), item("Checkout appears to be down.", 5))));
+		expect((await resolve()).status).toBe("up");
+	});
+});
+
 describe("disabled services", () => {
 	it("short-circuits to unknown without fetching, surfacing the reason", async () => {
 		const reason = "Upstream no longer publishes a usable feed.";
