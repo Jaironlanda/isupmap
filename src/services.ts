@@ -195,11 +195,16 @@ export const SERVICES: Service[] = [
 	{ id: "discord", name: "Discord", category: "Communication", weight: 6, source: { type: "statuspage", base: "https://discordstatus.com" } },
 	{ id: "slack", name: "Slack", category: "Communication", weight: 7, source: { type: "rss", url: "https://slack-status.com/feed/rss", statusUrl: "https://slack-status.com" } },
 	{ id: "zoom", name: "Zoom", category: "Communication", weight: 6, source: { type: "statuspage", base: "https://www.zoomstatus.com" } },
-	{ id: "twilio", name: "Twilio", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.twilio.com" } },
-	{ id: "sendgrid", name: "SendGrid", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.sendgrid.com" } },
+	// Twilio's "CARRIER NETWORK" group tracks third-party carriers (e.g. "SMS Delivery Delays from
+	// Twilio to Sky United Kingdom"); several are always open, pinning the tile degraded — ignore it.
+	{ id: "twilio", name: "Twilio", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.twilio.com", excludeGroups: ["CARRIER NETWORK"] } },
+	// status.sendgrid.com redirects to status.twilio.com; count only the SendGrid components there.
+	{ id: "sendgrid", name: "SendGrid", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.twilio.com", statusUrl: "https://status.twilio.com", components: ["API v2", "API v3", "SMTP", "Event Webhooks", "Parse API", "SendGrid API", "SendGrid Website", "SendGrid Marketing Campaigns", "SendGrid Legacy Marketing Campaigns", "SendGrid Statistics", "SendGrid Email Activity", "SendGrid Partners", "SendGrid Billing"] } },
 	{ id: "resend", name: "Resend", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://resend-status.com" } },
 	{ id: "mailgun", name: "Mailgun", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://status.mailgun.com" } },
-	{ id: "intercom", name: "Intercom", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://www.intercomstatus.com" } },
+	// Intercom's status page moved to finstatus.com (intercomstatus.com redirects to its HTML home,
+	// breaking the API path). It's an incident.io parent page; incidents cover Intercom and Fin.
+	{ id: "intercom", name: "Intercom", category: "Communication", weight: 4, source: { type: "statuspage", base: "https://www.finstatus.com" } },
 	{ id: "hubspot", name: "HubSpot", category: "Communication", weight: 5, source: { type: "statuspage", base: "https://status.hubspot.com" } },
 
 	// --- Productivity & Media ---
