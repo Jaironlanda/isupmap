@@ -851,6 +851,140 @@ describe("Docker (incident.io Statuspage-compatible JSON)", () => {
 	});
 });
 
+describe("statuspage extraBases (Atlassian hub + product pages)", () => {
+	const hub = "https://status.atlassian.com";
+	const jira = "https://jira-software.status.atlassian.com";
+	const conf = "https://confluence.status.atlassian.com";
+	const atlassian = svc({ type: "statuspage", base: hub, extraBases: [jira, conf] });
+	const page = (name: string, indicator: string, components: { id: string; name: string; status: string }[], incidents: unknown[] = []) =>
+		JSON.stringify({ page: { id: name.toLowerCase(), name, url: `https://${name}.example` }, status: { indicator, description: indicator === "none" ? "All Systems Operational" : "Partially Degraded Service" }, components, incidents });
+	function route(pages: Record<string, string | number>) {
+		fetchSpy.mockImplementation(async (url: string) => {
+			const hit = Object.entries(pages).find(([base]) => url === `${base}/api/v2/summary.json`);
+			if (!hit) throw new Error(`unexpected ${url}`);
+			return typeof hit[1] === "number" ? reply("", hit[1]) : reply(hit[1]);
+		});
+	}
+
+	it("takes the worst product page and labels it, even though the hub is clear", async () => {
+		route({
+			[hub]: page("Atlassian", "none", []),
+			[jira]: page("Jira Software", "minor", [{ id: "j1", name: "Viewing issues", status: "degraded_performance" }, { id: "j2", name: "Search", status: "operational" }]),
+			[conf]: page("Confluence", "none", [{ id: "c1", name: "Editing", status: "operational" }]),
+		});
+		const r = await resolveStatus(atlassian);
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Jira Software: Partially Degraded Service");
+		expect(r.details?.components).toEqual({ operational: 2, total: 3, impacted: ["Viewing issues"] });
+		expect(r.details?.url).toBe("https://Atlassian.example");
+	});
+
+	it("surfaces a product page's incident", async () => {
+		route({
+			[hub]: page("Atlassian", "none", []),
+			[jira]: page("Jira Software", "none", [{ id: "j1", name: "Search", status: "operational" }]),
+			[conf]: page("Confluence", "major", [{ id: "c1", name: "Editing", status: "major_outage" }], [{ name: "Confluence editing unavailable", impact: "major", updated_at: new Date().toISOString(), components: [{ id: "c1" }] }]),
+		});
+		const r = await resolveStatus(atlassian);
+		expect(r.details?.incident?.name).toBe("Confluence editing unavailable");
+		expect(r.status).not.toBe("up");
+	});
+
+	it("skips a product page that fails and notes it", async () => {
+		route({ [hub]: page("Atlassian", "none", []), [jira]: 500, [conf]: page("Confluence", "none", [{ id: "c1", name: "Editing", status: "operational" }]) });
+		const r = await resolveStatus(atlassian);
+		expect(r.status).toBe("up");
+		expect(r.details?.note).toContain("jira-software.status.atlassian.com unavailable");
+	});
+});
+
+describe("DocuSign status center JSON (docusign)", () => {
+	const base = "https://health.docusign.com/production/1ds/ssg/apps/health/dynamic";
+	const docusign = svc({ type: "docusign", url: base, statusUrl: "https://health.docusign.com/status" });
+	const products = (statuses: Record<string, string>) =>
+		JSON.stringify({
+			components: [
+				{ id: "g", name: "Products", type: "group", status: "available" },
+				...Object.entries(statuses).map(([name, status], i) => ({ id: `p${i}`, name, type: "product", status, parentId: "g" })),
+				{ id: "s1", name: "NA1", type: "site", status: "service_disruption", parentId: "p0" },
+			],
+		});
+	const incident = (o: Partial<{ title: string; type: string; status: string; impact: string; updatedAt: string }>) => ({
+		title: "Incident",
+		type: "incident",
+		status: "investigating",
+		impact: "performance_degradation",
+		updatedAt: new Date().toISOString(),
+		...o,
+	});
+	function serve(components: string, incidents: unknown[] | number) {
+		fetchSpy.mockImplementation(async (url: string) => {
+			if (url === `${base}/components.json`) return reply(components);
+			if (url === `${base}/incidents.json`) return typeof incidents === "number" ? reply("", incidents) : reply(JSON.stringify({ incidents }));
+			throw new Error(`unexpected ${url}`);
+		});
+	}
+	const healthy = { eSignature: "available", CLM: "available", Rooms: "available", Notary: "available" };
+
+	it("is up when every product is available and incidents are resolved, canceled or scheduled", async () => {
+		serve(products(healthy), [incident({ status: "resolved", impact: "service_disruption" }), incident({ type: "maintenance", status: "scheduled" }), incident({ type: "maintenance", status: "canceled" })]);
+		const r = await resolveStatus(docusign);
+		expect(r.status).toBe("up");
+		expect(r.description).toBe("All Systems Operational");
+		// Sites roll up into products: a site-level status alone doesn't count.
+		expect(r.details?.components).toEqual({ operational: 4, total: 4, impacted: [] });
+		expect(r.details?.url).toBe("https://health.docusign.com/status");
+	});
+
+	it("is degraded for an active performance-degradation incident", async () => {
+		serve(products(healthy), [incident({ title: "Document Preview Unavailable on NA11 (Incident 6194)", status: "identified" })]);
+		const r = await resolveStatus(docusign);
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Document Preview Unavailable on NA11 (Incident 6194)");
+		expect(r.details?.incident?.name).toBe("Document Preview Unavailable on NA11 (Incident 6194)");
+	});
+
+	it("is down for a broad service disruption, degraded when it hits one product", async () => {
+		serve(products({ eSignature: "service_disruption", CLM: "service_disruption", Rooms: "available", Notary: "available" }), []);
+		expect((await resolveStatus(docusign)).status).toBe("down");
+		serve(products({ ...healthy, eSignature: "service_disruption" }), []);
+		const r = await resolveStatus(docusign);
+		expect(r.status).toBe("degraded");
+		expect(r.details?.components?.impacted).toEqual(["eSignature"]);
+	});
+
+	it("reads a maintenance in progress as degraded and ignores stale open incidents", async () => {
+		serve(products(healthy), [incident({ type: "maintenance", status: "in_progress", title: "CLM maintenance" })]);
+		expect((await resolveStatus(docusign)).status).toBe("degraded");
+		serve(products(healthy), [incident({ updatedAt: new Date(Date.now() - 30 * 86_400_000).toISOString() })]);
+		expect((await resolveStatus(docusign)).status).toBe("up");
+	});
+
+	it("falls back to components when incidents.json fails, and is unknown when components.json fails", async () => {
+		serve(products({ ...healthy, CLM: "performance_degradation" }), 500);
+		expect((await resolveStatus(docusign)).status).toBe("degraded");
+		fetchSpy.mockResolvedValue(reply("", 404));
+		expect((await resolveStatus(docusign)).status).toBe("unknown");
+	});
+});
+
+describe("Datadog RSS feed (Statuspage-format history)", () => {
+	const url = "https://status.datadoghq.com/history.rss";
+	const feed = (body: string) =>
+		`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Datadog US1 Status - Incident History</title><item><title>Delayed Traces in APM</title><description>${body}</description><pubDate>${new Date().toUTCString()}</pubDate><link>https://status.datadoghq.com/incidents/x</link></item></channel></rss>`;
+	const update = (stage: string, text: string) => `&lt;p&gt;&lt;small&gt;Nov  9, 20:35 UTC&lt;/small&gt;&lt;br&gt;&lt;strong&gt;${stage}&lt;/strong&gt; - ${text}&lt;/p&gt;`;
+
+	it("is up once the newest update is Resolved", async () => {
+		fetchSpy.mockResolvedValue(reply(feed(update("Resolved", "We have seen recovery on live data for APM.") + update("Identified", "Delayed traces in APM."))));
+		expect((await resolveStatus(svc({ type: "rss", url }))).status).toBe("up");
+	});
+
+	it("is active while the incident is Identified", async () => {
+		fetchSpy.mockResolvedValue(reply(feed(update("Identified", "Some users may see missing or delayed traces."))));
+		expect((await resolveStatus(svc({ type: "rss", url }))).status).toBe("degraded");
+	});
+});
+
 describe("Lemon Squeezy RSS feed (Oh Dear)", () => {
 	const url = "https://status.lemonsqueezy.com/rss";
 	const resolve = () => resolveStatus(svc({ type: "rss", url, statusUrl: "https://status.lemonsqueezy.com" }));

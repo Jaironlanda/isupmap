@@ -151,9 +151,10 @@ Every service is normalized to one of: `up` · `degraded` · `down` · `unknown`
 
 | Source type   | How status is derived |
 |---------------|-----------------------|
-| **Statuspage** | Reads `{base}/api/v2/summary.json` (Atlassian). `status.indicator` maps: `none`→`up`, `minor`/`maintenance`→`degraded`. A `major`/`critical` indicator is **tempered by breadth** — since the indicator reflects peak component severity, not how much is affected — so it only reads `down` when the major outage is broad (≥50% of components, or too few components to judge); a localized one (e.g. a single region) → `degraded`. The summary also yields component rollups and active incidents for the detail view. A source can set `excludeGroups` to drop per-location component groups whose noise pins the indicator (Cloudflare's ~345 datacenters, dozens always "Re-routed" or in maintenance); the status is then recomputed from the remaining components and the incidents that touch them. The same recompute drops **stale incidents** — open but not updated in 14+ days (e.g. Elastic's AWS me-south-1 incident, open since March) — along with the non-operational components they cover; they're listed in the detail note instead. Pages hosted on incident.io (26-char page id) serve a truncated component list in `summary.json`, so the full list is read from `components.json`. |
+| **Statuspage** | Reads `{base}/api/v2/summary.json` (Atlassian). `status.indicator` maps: `none`→`up`, `minor`/`maintenance`→`degraded`. A `major`/`critical` indicator is **tempered by breadth** — since the indicator reflects peak component severity, not how much is affected — so it only reads `down` when the major outage is broad (≥50% of components, or too few components to judge); a localized one (e.g. a single region) → `degraded`. The summary also yields component rollups and active incidents for the detail view. A source can set `excludeGroups` to drop per-location component groups whose noise pins the indicator (Cloudflare's ~345 datacenters, dozens always "Re-routed" or in maintenance); the status is then recomputed from the remaining components and the incidents that touch them. The same recompute drops **stale incidents** — open but not updated in 14+ days (e.g. Elastic's AWS me-south-1 incident, open since March) — along with the non-operational components they cover; they're listed in the detail note instead. Pages hosted on incident.io (26-char page id) serve a truncated component list in `summary.json`, so the full list is read from `components.json`. A source can also set `components` to count only named components (a service listed on another provider's page — Replicate on Cloudflare's, SendGrid on Twilio's), or `extraBases` to merge sibling pages, worst indicator winning (Atlassian's hub plus its Jira / Confluence / JSM pages). |
 | **RSS / Atom** | Parses the latest feed entry (via `fast-xml-parser`). Entries older than 48h are treated as resolved (`up`). A fresh entry mentioning *resolved/restored/operational* → `up`; *outage/down/major/critical* → `down`; anything else fresh → `degraded`. An explicit title state wins over the body: a `…: Resolved` suffix (Appwrite) or a `RESOLVED: …` prefix (GCP/Firebase, whose resolved bodies are incident reports). Heuristic. |
 | **HTTP ping**  | A plain `GET`. `2xx`/`3xx` → `up`; other response → `degraded`; network error or timeout → `down`. |
+| **DocuSign** | Reads DocuSign's status-center JSON (`components.json` + `incidents.json`). The indicator is the worst of the `product` components and every active incident's impact (`performance_degradation`→minor, `service_disruption`→major, maintenance in progress→maintenance), then mapped with the Statuspage breadth rules. |
 | **AWS Health** | Reads the AWS Health Dashboard's public current-events JSON (served as UTF-16). An event is *active* when its latest update isn't the resolution marker and is under 48h old; long-running events with no recent updates are listed in the note but don't color the tile. Active → `degraded`; a disruption that is global, hits "Multiple services", or spans 2+ regions → `down`. |
 | *(any)*        | A failed fetch or timeout → `unknown` (treated as "no data" — never opens an incident or counts as downtime). |
 
@@ -254,13 +255,13 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Mailgun | Communication | Statuspage | `https://status.mailgun.com` |
 | Intercom | Communication | Statuspage | `https://www.finstatus.com` |
 | HubSpot | Communication | Statuspage | `https://status.hubspot.com` |
-| Atlassian | Productivity & Media | Statuspage | `https://status.atlassian.com` |
+| Atlassian | Productivity & Media | Statuspage (+ Jira Software, Confluence, JSM pages) | `https://status.atlassian.com` |
 | Dropbox | Productivity & Media | Statuspage | `https://status.dropbox.com` |
-| Datadog | Productivity & Media | Statuspage | `https://status.datadoghq.com` |
+| Datadog | Productivity & Media | RSS | `https://status.datadoghq.com/history.rss` |
 | Figma | Productivity & Media | Statuspage | `https://status.figma.com` |
 | Box | Productivity & Media | Statuspage | `https://status.box.com` |
 | Squarespace | Productivity & Media | Statuspage | `https://status.squarespace.com` |
-| Wikipedia | Productivity & Media | HTTP ping | `https://www.wikipedia.org` |
+| Wikipedia | Productivity & Media | Statuspage | `https://www.wikimediastatus.net` |
 | Linear | Productivity & Media | Statuspage | `https://linearstatus.com` |
 | Notion | Productivity & Media | Statuspage | `https://www.notion-status.com` |
 | Cloudinary | Productivity & Media | Statuspage | `https://status.cloudinary.com` |
@@ -269,7 +270,7 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Miro | Productivity & Media | Statuspage | `https://status.miro.com` |
 | Canva | Productivity & Media | Statuspage | `https://www.canvastatus.com` |
 | Webflow | Productivity & Media | Statuspage | `https://status.webflow.com` |
-| DocuSign | Productivity & Media | Statuspage | `https://status.docusign.com` |
+| DocuSign | Productivity & Media | DocuSign JSON | `https://health.docusign.com/status` |
 | Twitch | Gaming & Entertainment | Statuspage | `https://status.twitch.com` |
 | Epic Games | Gaming & Entertainment | Statuspage | `https://status.epicgames.com` |
 | Netflix | Gaming & Entertainment | HTTP ping | `https://www.netflix.com` |
