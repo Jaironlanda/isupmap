@@ -92,9 +92,11 @@ async function fetchWithRetry(url: string, init: RequestInit = {}, ctx?: FetchCt
 }
 
 interface SummaryComponent {
+	id?: string;
 	name?: string;
 	status?: string;
 	group?: boolean;
+	group_id?: string | null;
 }
 
 interface SummaryIncident {
@@ -102,6 +104,7 @@ interface SummaryIncident {
 	impact?: string;
 	shortlink?: string;
 	updated_at?: string;
+	components?: { id?: string }[];
 }
 
 interface StatuspageSummary {
@@ -141,28 +144,72 @@ function statuspageStatus(indicator: string, total: number, majorOutages: number
 	}
 }
 
+/** Severity order of Statuspage indicators, for taking the worst of several. */
+const INDICATOR_RANK: Record<string, number> = { none: 0, maintenance: 1, minor: 2, major: 3, critical: 4 };
+/** Component status → the indicator Statuspage would derive from it. */
+const COMPONENT_INDICATOR: Record<string, string> = {
+	operational: "none",
+	under_maintenance: "maintenance",
+	degraded_performance: "minor",
+	partial_outage: "minor",
+	major_outage: "major",
+};
+const worstIndicator = (a: string, b: string): string => ((INDICATOR_RANK[b] ?? 0) > (INDICATOR_RANK[a] ?? 0) ? b : a);
+
 /**
  * Atlassian Statuspage. We read `summary.json` (a superset of `status.json`)
  * so the hover card can show component rollups and active incidents.
+ *
+ * With `excludeGroups`, components in those groups are dropped and the
+ * indicator is recomputed from what's left (worst remaining component status,
+ * plus the impact of any active incident that touches a remaining component or
+ * names none). This is for pages whose top-level indicator is dominated by
+ * per-location noise — e.g. Cloudflare lists ~345 datacenters, dozens of which
+ * are always "Re-routed" or in maintenance, pinning the indicator at `minor`
+ * even when every product is operational.
  */
 async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): Promise<ServiceStatus> {
 	const res = await fetchWithRetry(`${base.replace(/\/$/, "")}/api/v2/summary.json`, {}, ctx);
 	if (!res.ok) return result(service, "unknown", `Status API returned HTTP ${res.status}`);
 
 	const data = (await res.json()) as StatuspageSummary;
-	const indicator = data.status?.indicator ?? "none";
-	const description = data.status?.description ?? "";
+	const src = service.source as Extract<ServiceSource, { type: "statuspage" }>;
+	const excludeGroups = new Set(src.excludeGroups ?? []);
+	const all = data.components ?? [];
+
+	// Group containers whose name is excluded, and every component inside them.
+	const excludedGroupIds = new Set(all.filter((c) => c.group === true && excludeGroups.has(c.name ?? "")).map((c) => c.id));
+	const isExcluded = (c: SummaryComponent) => excludedGroupIds.has(c.id) || (c.group_id != null && excludedGroupIds.has(c.group_id));
+	const excludedIds = new Set(all.filter(isExcluded).map((c) => c.id));
 
 	// Component rollup (skip group containers, which roll up their children).
-	const components = (data.components ?? []).filter((c) => c.group !== true);
+	const leaves = all.filter((c) => c.group !== true);
+	const components = leaves.filter((c) => !isExcluded(c));
 	const total = components.length;
 	const impacted = components.filter((c) => c.status && c.status !== "operational").map((c) => c.name ?? "Unknown");
 	const operational = total - impacted.length;
 	const majorOutages = components.filter((c) => c.status === "major_outage").length;
 
+	let indicator = data.status?.indicator ?? "none";
+	let description = data.status?.description ?? "";
+	let incidents = data.incidents ?? [];
+	let note: string | undefined;
+
+	if (excludedGroupIds.size > 0) {
+		// An incident counts unless every component it names is excluded.
+		incidents = incidents.filter((i) => !i.components?.length || i.components.some((c) => !excludedIds.has(c.id)));
+		indicator = "none";
+		for (const c of components) indicator = worstIndicator(indicator, COMPONENT_INDICATOR[c.status ?? ""] ?? "none");
+		for (const i of incidents) indicator = worstIndicator(indicator, i.impact ?? "none");
+		// The upstream description reflects the excluded noise too, so derive our own.
+		description = indicator === "none" ? "All Systems Operational" : (incidents[0]?.name ?? (impacted.length ? `Impacted: ${impacted.join(", ")}` : ""));
+		const ignored = leaves.filter((c) => isExcluded(c) && c.status && c.status !== "operational").length;
+		if (ignored > 0) note = `${ignored} component${ignored === 1 ? "" : "s"} in ignored groups not operational (not counted)`;
+	}
+
 	const status = statuspageStatus(indicator, total, majorOutages);
 
-	const incident = data.incidents?.[0];
+	const incident = incidents[0];
 	const details: ServiceDetails = {
 		url: data.page?.url,
 		updatedAt: data.page?.updated_at,
@@ -170,6 +217,7 @@ async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): 
 		incident: incident
 			? { name: incident.name ?? "Active incident", impact: incident.impact, url: incident.shortlink, updatedAt: incident.updated_at }
 			: undefined,
+		note,
 	};
 
 	return result(service, status, description || (status === "up" ? "All Systems Operational" : indicator), details);
@@ -296,8 +344,17 @@ function leadingSignal(description: string): StatusLevel | null {
  * "RESOLVED: …" never matches.
  */
 const TITLE_STATE_RE = /:\s*(resolved|completed|operational|monitoring|maintenance|degraded|partial outage|investigating|identified|major outage|outage|down)\s*$/i;
+/**
+ * Google's feeds (GCP, Firebase) prefix the title with the incident state:
+ * "RESOLVED: …" once closed, "UPDATE: …" while open. A resolved entry's body is
+ * the incident report ("Incident began at … a power disruption …"), which the
+ * body heuristics read as an active outage — so the prefix wins. Only RESOLVED
+ * is trusted; "UPDATE:" carries no state and falls through to the body.
+ */
+const TITLE_RESOLVED_PREFIX_RE = /^\s*resolved\s*:/i;
 
 function titleStateSignal(title: string, text: string): StatusLevel | null {
+	if (TITLE_RESOLVED_PREFIX_RE.test(title)) return "up";
 	const state = TITLE_STATE_RE.exec(title)?.[1]?.toLowerCase();
 	if (!state) return null;
 	switch (state) {
@@ -326,13 +383,14 @@ function titleStateSignal(title: string, text: string): StatusLevel | null {
  * fixed title from "Investigating" through "Resolved" while the body advances
  * through the lifecycle. So we read the body's explicit `Status:` line first,
  * then its leading lifecycle keyword, and only fall back to the title last.
- * The exception is a title that ends in an explicit state suffix (Appwrite),
- * which is checked first — see {@link titleStateSignal}.
+ * The exception is an explicit title state — a "…: Resolved" suffix (Appwrite)
+ * or a "RESOLVED: …" prefix (GCP/Firebase) — which is checked first; see
+ * {@link titleStateSignal}.
  */
 function classifyEntry(title: string, description: string): StatusLevel {
 	const text = `${title} ${description}`;
 
-	// 0. Explicit per-update state suffix on the title, e.g. "…: Resolved" (Appwrite).
+	// 0. Explicit title state: "…: Resolved" suffix (Appwrite) or "RESOLVED: …" prefix (Google).
 	const titled = titleStateSignal(title, text);
 	if (titled) return titled;
 
