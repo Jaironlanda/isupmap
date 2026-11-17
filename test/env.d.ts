@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin/types" />
 
 // Make the Worker's generated bindings (DB, etc.) the type of the test `env`.
 declare module "cloudflare:test" {
