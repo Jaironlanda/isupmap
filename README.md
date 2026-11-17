@@ -227,7 +227,7 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Runway | AI | Statuspage | `https://status.runwayml.com` |
 | Hugging Face | AI | RSS | `https://status.huggingface.co/feed.rss` |
 | Together AI | AI | RSS | `https://status.together.ai/feed.rss` |
-| Perplexity | AI | RSS | `https://status.perplexity.com/default/history.rss` |
+| Perplexity | AI | Statuspage | `https://status.perplexity.com` |
 | Stability AI | AI | Statuspage | `https://status.stability.ai` |
 | Deepgram | AI | Statuspage | `https://status.deepgram.com` |
 | AssemblyAI | AI | Statuspage | `https://status.assemblyai.com` |
