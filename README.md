@@ -241,7 +241,7 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Shopify | Payments | Statuspage | `https://www.shopifystatus.com` |
 | Plaid | Payments | Statuspage | `https://status.plaid.com` |
 | Paddle | Payments | Statuspage | `https://paddlestatus.com` |
-| Lemon Squeezy | Payments | RSS · **⊘ disabled** | `https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss` |
+| Lemon Squeezy | Payments | RSS | `https://status.lemonsqueezy.com/rss` |
 | Square | Payments | Statuspage | `https://www.issquareup.com` |
 | Klarna | Payments | Statuspage | `https://status.klarna.com` |
 | PayPal | Payments | RSS | `https://www.paypal-status.com/feed/rss` |
@@ -313,7 +313,6 @@ Currently disabled (upstream no longer exposes a machine-readable feed, verified
 | Railway | Migrated to a JS-rendered status page (`status.railway.com`); the old Betterstack feed is empty. |
 | PagerDuty | `history.rss` now returns an HTML page instead of XML. |
 | Algolia | `history.rss` now returns an HTML page instead of XML. |
-| Lemon Squeezy | The Oh Dear feed URL now serves an HTML subscribe page instead of a feed. |
 
 To add a service, append an entry to [src/services.ts](src/services.ts) with its
 `category`, a `weight` (tile size), and a `source`. Brand logos are
