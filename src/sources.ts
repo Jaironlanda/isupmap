@@ -823,6 +823,101 @@ async function fetchStatusio(service: Service, pageId: string, ctx?: FetchCtx): 
 	});
 }
 
+interface InstatusSummary {
+	page?: { name?: string; url?: string; status?: string };
+	activeIncidents?: { name?: string; status?: string; impact?: string; url?: string; updatedAt?: string }[];
+	activeMaintenances?: { name?: string; status?: string; url?: string; updatedAt?: string }[];
+}
+
+interface InstatusComponent {
+	id?: string;
+	name?: string;
+	status?: string;
+	group?: { id?: string } | null;
+}
+
+/** Instatus component status → the equivalent Statuspage indicator. */
+const INSTATUS_INDICATOR: Record<string, string> = {
+	OPERATIONAL: "none",
+	UNDERMAINTENANCE: "maintenance",
+	DEGRADEDPERFORMANCE: "minor",
+	PARTIALOUTAGE: "minor",
+	MAJOROUTAGE: "major",
+};
+
+/**
+ * Instatus (`summary.json` + `v2/components.json`). The indicator is the worst
+ * component status plus every active incident's impact (an in-progress
+ * maintenance reads as maintenance), mapped with the Statuspage breadth rules.
+ * Instatus doesn't say which components an incident covers, so the stale rule is
+ * coarser than Statuspage's: when there are active incidents and *all* of them
+ * are stale (no update in {@link STALE_INCIDENT_MS}), the components they left
+ * non-operational aren't counted either — e.g. mastodon.social's Oct 2026
+ * Hetzner incident, left "Monitoring" with "Background queues" in partial outage.
+ * Components degraded with no open incident still count.
+ */
+async function fetchInstatus(service: Service, base: string, ctx?: FetchCtx): Promise<ServiceStatus> {
+	const root = base.replace(/\/$/, "");
+	const [sumRes, compRes] = await Promise.all([fetchWithRetry(`${root}/summary.json`, {}, ctx), fetchWithRetry(`${root}/v2/components.json`, {}, ctx).catch(() => null)]);
+	if (!sumRes.ok) return result(service, "unknown", `Status API returned HTTP ${sumRes.status}`);
+	const data = (await sumRes.json()) as InstatusSummary;
+	let components: InstatusComponent[] = [];
+	if (compRes?.ok) {
+		try {
+			const all = ((await compRes.json()) as { components?: InstatusComponent[] }).components ?? [];
+			// Group containers are listed as components too; roll up only the leaves.
+			const groupIds = new Set(all.map((c) => c.group?.id).filter((id): id is string => id != null));
+			components = all.filter((c) => !groupIds.has(c.id ?? ""));
+		} catch {
+			// Components are best-effort; the page status still applies.
+		}
+	}
+
+	const now = Date.now();
+	const isStale = (i: { updatedAt?: string }) => i.updatedAt != null && now - Date.parse(i.updatedAt) >= STALE_INCIDENT_MS;
+	const allIncidents = data.activeIncidents ?? [];
+	const incidents = allIncidents.filter((i) => !isStale(i));
+	const stale = allIncidents.filter(isStale);
+	const discountComponents = stale.length > 0 && incidents.length === 0;
+	const maintenances = (data.activeMaintenances ?? []).filter((m) => (m.status ?? "").toUpperCase() === "INPROGRESS");
+
+	const level = (status?: string) => INSTATUS_INDICATOR[(status ?? "").toUpperCase()] ?? (status ? "minor" : "none");
+	const nonOperational = components.filter((c) => level(c.status) !== "none");
+	// Discounted components drop out of the rollup entirely, as on Statuspage.
+	const counted = discountComponents ? components.filter((c) => level(c.status) === "none") : components;
+	const impacted = counted.filter((c) => level(c.status) !== "none").map((c) => c.name ?? "Unknown");
+	const majorOutages = counted.filter((c) => level(c.status) === "major").length;
+
+	let indicator = "none";
+	for (const c of counted) indicator = worstIndicator(indicator, level(c.status));
+	// Without a component list, fall back to the page-level status.
+	if (components.length === 0 && !discountComponents) {
+		const page = (data.page?.status ?? "UP").toUpperCase();
+		indicator = page === "UP" ? "none" : page.includes("MAJOR") ? "major" : page.includes("MAINTENANCE") ? "maintenance" : "minor";
+	}
+	for (const i of incidents) indicator = worstIndicator(indicator, level(i.impact));
+	if (maintenances.length) indicator = worstIndicator(indicator, "maintenance");
+
+	const notes = stale.map((i) => `Stale incident not counted (no update in ${Math.floor((now - Date.parse(i.updatedAt as string)) / 86_400_000)} days): ${i.name ?? "Unnamed incident"}`);
+	if (discountComponents && nonOperational.length) notes.push(`${nonOperational.length} non-operational component${nonOperational.length === 1 ? "" : "s"} not counted (only stale incidents open)`);
+
+	const status = statuspageStatus(indicator, counted.length, majorOutages);
+	const incident = incidents[0];
+	const maintenance = maintenances[0];
+	const description =
+		indicator === "none" ? "All Systems Operational" : (incident?.name ?? maintenance?.name ?? (impacted.length ? `Impacted: ${impacted.join(", ")}` : indicator));
+	return result(service, status, description, {
+		url: data.page?.url ?? root,
+		components: counted.length ? { operational: counted.length - impacted.length, total: counted.length, impacted } : undefined,
+		incident: incident
+			? { name: incident.name ?? "Active incident", impact: incident.impact, url: incident.url, updatedAt: incident.updatedAt }
+			: maintenance
+				? { name: maintenance.name ?? "Maintenance", impact: "maintenance", url: maintenance.url, updatedAt: maintenance.updatedAt }
+				: undefined,
+		note: notes.length ? notes.join("; ") : undefined,
+	});
+}
+
 interface PsnStatus {
 	statusType?: string;
 	modifiedDate?: string;
@@ -957,6 +1052,8 @@ export async function resolveStatus(service: Service, ae?: AnalyticsEngineDatase
 				return await fetchStatusio(service, service.source.pageId, ctx);
 			case "playstation":
 				return await fetchPlaystation(service, ctx);
+			case "instatus":
+				return await fetchInstatus(service, service.source.base, ctx);
 		}
 	} catch (err) {
 		const reason = err instanceof Error && err.name === "AbortError" ? "Timed out" : "Unreachable";

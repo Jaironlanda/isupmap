@@ -90,7 +90,7 @@ function formatUpdated(updatedAt: number | null): string {
 function statusPageUrl(service: Service): string {
 	const src = service.source;
 	if (src.statusUrl) return src.statusUrl;
-	if (src.type === "statuspage") return src.base;
+	if (src.type === "statuspage" || src.type === "instatus") return src.base;
 	if (src.type === "statusio") return `https://status.io/pages/${src.pageId}`;
 	if (src.type === "playstation") return "https://status.playstation.com";
 	try {
