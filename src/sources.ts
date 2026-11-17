@@ -287,6 +287,38 @@ function leadingSignal(description: string): StatusLevel | null {
 }
 
 /**
+ * Per-update state suffix on the entry **title**, e.g. Appwrite's
+ * "Slow storage operations in San Francisco: Resolved". Feeds in this style emit
+ * one entry per update with the state appended, and the body is free prose that
+ * often still describes the problem ("…we're sorry for the disruption"), so the
+ * suffix — not the body — is the authoritative state. Anchored to the end of the
+ * title and limited to lifecycle words so a prefix like "Incident: …" or
+ * "RESOLVED: …" never matches.
+ */
+const TITLE_STATE_RE = /:\s*(resolved|completed|operational|monitoring|maintenance|degraded|partial outage|investigating|identified|major outage|outage|down)\s*$/i;
+
+function titleStateSignal(title: string, text: string): StatusLevel | null {
+	const state = TITLE_STATE_RE.exec(title)?.[1]?.toLowerCase();
+	if (!state) return null;
+	switch (state) {
+		case "resolved":
+		case "completed":
+		case "operational":
+		case "monitoring":
+			return "up";
+		case "maintenance":
+		case "degraded":
+		case "partial outage":
+			return "degraded";
+		case "investigating":
+		case "identified":
+			return DOWN_RE.test(text) ? "down" : "degraded";
+		default: // major outage, outage, down
+			return "down";
+	}
+}
+
+/**
  * Classify a feed entry to a status level.
  *
  * The authoritative signal on modern status feeds (Statuspage / Instatus /
@@ -294,9 +326,15 @@ function leadingSignal(description: string): StatusLevel | null {
  * fixed title from "Investigating" through "Resolved" while the body advances
  * through the lifecycle. So we read the body's explicit `Status:` line first,
  * then its leading lifecycle keyword, and only fall back to the title last.
+ * The exception is a title that ends in an explicit state suffix (Appwrite),
+ * which is checked first — see {@link titleStateSignal}.
  */
 function classifyEntry(title: string, description: string): StatusLevel {
 	const text = `${title} ${description}`;
+
+	// 0. Explicit per-update state suffix on the title, e.g. "…: Resolved" (Appwrite).
+	const titled = titleStateSignal(title, text);
+	if (titled) return titled;
 
 	// 1. Explicit lifecycle line, e.g. "<b>Status: Monitoring</b>" / "Status: RESOLVED".
 	const state = /status:\s*([a-z]+)/i.exec(description)?.[1]?.toLowerCase();

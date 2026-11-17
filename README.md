@@ -210,8 +210,8 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | PagerDuty | Developer & Cloud | RSS · **⊘ disabled** | `https://status.pagerduty.com/history.rss` |
 | Algolia | Developer & Cloud | RSS · **⊘ disabled** | `https://status.algolia.com/history.rss` |
 | GitLab | Developer & Cloud | RSS | `https://status.gitlab.com/pages/5b36dc6502d06804c08349f7/rss` |
-| Docker | Developer & Cloud | RSS | `https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss` |
-| Appwrite | Developer & Cloud | RSS | `https://status.appwrite.online/feed.rss` |
+| Docker | Developer & Cloud | Statuspage | `https://www.dockerstatus.com` |
+| Appwrite | Developer & Cloud | RSS | `https://appwrite.online/feed.atom` |
 | Firebase | Developer & Cloud | RSS (Atom) | `https://status.firebase.google.com/en/feed.atom` |
 | Firecrawl | Developer & Cloud | RSS | `https://status.firecrawl.dev/feed.rss` |
 | OpenAI | AI | RSS | `https://status.openai.com/feed.rss` |

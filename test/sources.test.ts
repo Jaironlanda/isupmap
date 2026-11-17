@@ -436,6 +436,75 @@ describe("Firecrawl RSS feed (Betterstack)", () => {
 	});
 });
 
+describe("Appwrite Atom feed (title state suffix)", () => {
+	const feedUrl = "https://appwrite.online/feed.atom";
+	const statusUrl = "https://appwrite.online";
+	const resolve = () => resolveStatus(svc({ type: "rss", url: feedUrl, statusUrl }));
+	const ago = (mins: number) => new Date(Date.now() - mins * 60_000).toISOString();
+
+	// Mirrors appwrite.online/feed.atom: one entry per update, state appended to the
+	// title, and within an incident the updates are listed oldest-first.
+	function appwriteAtom(entries: { title: string; updated: string; content: string }[]) {
+		const body = entries
+			.map((e, i) => `<entry><title>${e.title}</title><id>${statusUrl}/#inc-${i}</id><updated>${e.updated}</updated><link href="${statusUrl}/#inc"></link><content>${e.content}</content></entry>`)
+			.join("");
+		return `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Appwrite status</title><id>${statusUrl}/</id><updated>${ago(0)}</updated>${body}</feed>`;
+	}
+
+	it("reads a ': Resolved' title as up even when the prose body mentions the disruption", async () => {
+		fetchSpy.mockResolvedValue(
+			reply(
+				appwriteAtom([
+					{ title: "Slow storage operations in San Francisco: Degraded", updated: ago(300), content: "We're investigating intermittent slowness in Storage; some uploads time out." },
+					{ title: "Slow storage operations in San Francisco: Resolved", updated: ago(10), content: "Storage has been working normally since 20:00 UTC. We're sorry for the disruption." },
+				]),
+			),
+		);
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.details?.url).toBe(statusUrl);
+		expect(r.details?.incident).toBeUndefined();
+	});
+
+	it("reads a ': Degraded' title as degraded while the incident is open", async () => {
+		fetchSpy.mockResolvedValue(
+			reply(appwriteAtom([{ title: "Static Appwrite Sites return 500 errors: Degraded", updated: ago(5), content: "Requests to static sites are failing with HTTP 500 errors in all regions." }])),
+		);
+		const r = await resolve();
+		expect(r.status).toBe("degraded");
+		expect(r.details?.incident?.name).toBe("Static Appwrite Sites return 500 errors: Degraded");
+	});
+
+	it("reads a ': Maintenance' title as degraded", async () => {
+		fetchSpy.mockResolvedValue(reply(appwriteAtom([{ title: "Analytics/Usage: Maintenance", updated: ago(5), content: "We're improving the underlying systems." }])));
+		expect((await resolve()).status).toBe("degraded");
+	});
+
+	it("does not treat a title prefix like 'Incident:' as a state suffix", async () => {
+		// Only a trailing lifecycle word counts; this falls through to the body (resolved).
+		fetchSpy.mockResolvedValue(reply(appwriteAtom([{ title: "Incident: Degraded API latency", updated: ago(5), content: "Resolved - latency is back to normal." }])));
+		expect((await resolve()).status).toBe("up");
+	});
+});
+
+describe("Docker (incident.io Statuspage-compatible JSON)", () => {
+	it("reads summary.json off dockerstatus.com", async () => {
+		fetchSpy.mockResolvedValue(
+			reply(
+				JSON.stringify({
+					page: { id: "01K74XC4TMWXW51JZXNY729350", name: "Docker", url: "https://www.dockerstatus.com/", updated_at: "2026-09-24T16:38:11Z" },
+					status: { description: "All Systems Operational", indicator: "none" },
+					components: [{ name: "Docker Hub Registry", status: "operational" }],
+					incidents: [],
+				}),
+			),
+		);
+		const r = await resolveStatus(svc({ type: "statuspage", base: "https://www.dockerstatus.com" }));
+		expect(fetchSpy.mock.calls[0][0]).toBe("https://www.dockerstatus.com/api/v2/summary.json");
+		expect(r.status).toBe("up");
+	});
+});
+
 describe("disabled services", () => {
 	it("short-circuits to unknown without fetching, surfacing the reason", async () => {
 		const reason = "Upstream no longer publishes a usable feed.";
