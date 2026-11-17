@@ -1,0 +1,168 @@
+name: Deploy
+
+# Tag-driven, deliberately asymmetric (same model as jsonsilo-server):
+#
+#   STAGING    — automatic. Push a tag whose name contains "staging" and it ships.
+#                  git tag v1.4.0-staging && git push origin v1.4.0-staging
+#
+#   PRODUCTION — manual only. Pushing a plain v* tag does NOT deploy; it records the
+#                tag and stops. To ship it, run this workflow from Actions → Deploy →
+#                Run workflow, pick the tag as the ref, and retype the tag name:
+#                  gh workflow run deploy.yml --ref v1.4.0 -f confirm_tag=v1.4.0
+#
+# Each environment's real config is gitignored and lives in a secret, written to disk
+# here. Required secrets, per GitHub Environment (Settings → Environments):
+#   staging:     CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+#                WRANGLER_STAGING_CONFIG  (gh secret set WRANGLER_STAGING_CONFIG --env staging < wrangler.staging.jsonc)
+#   production:  CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+#                WRANGLER_PROD_CONFIG     (gh secret set WRANGLER_PROD_CONFIG --env production < wrangler.prod.jsonc)
+# Optional environment variable PUBLIC_URL (e.g. https://isupmap.com) is shown as the
+# deployment link. Restrict the `production` environment to `v*` tags so GitHub itself
+# rejects a dispatch from any other ref.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      confirm_tag:
+        description: "Retype the tag you selected in 'Use workflow from' (e.g. v1.4.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.pick.outputs.target }}
+      config: ${{ steps.pick.outputs.config }}
+      deploy: ${{ steps.pick.outputs.deploy }}
+    steps:
+      - name: Resolve target from tag
+        id: pick
+        env:
+          TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          EVENT: ${{ github.event_name }}
+          CONFIRM: ${{ inputs.confirm_tag }}
+        run: |
+          set -euo pipefail
+
+          # A manual run must name a tag and be confirmed, whichever environment it lands on.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$REF_TYPE" != "tag" ]; then
+              echo "::error::Deploy from a tag, not a branch. Re-run and set 'Use workflow from' to a v* tag."
+              exit 1
+            fi
+            if [ "$CONFIRM" != "$TAG" ]; then
+              echo "::error::confirm_tag ('$CONFIRM') does not match the selected ref ('$TAG'). Nothing deployed."
+              exit 1
+            fi
+          fi
+
+          if printf '%s' "$TAG" | grep -qi 'staging'; then
+            TARGET=staging
+            CONFIG=wrangler.staging.jsonc
+          else
+            TARGET=production
+            CONFIG=wrangler.prod.jsonc
+          fi
+
+          # Production never ships off a bare tag push — see the header.
+          DEPLOY=true
+          if [ "$TARGET" = "production" ] && [ "$EVENT" != "workflow_dispatch" ]; then
+            DEPLOY=false
+          fi
+
+          {
+            echo "target=$TARGET"
+            echo "config=$CONFIG"
+            echo "deploy=$DEPLOY"
+          } >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: resolve
+    if: needs.resolve.outputs.deploy == 'true'
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: [resolve, ci]
+    # Forks (e.g. from the Deploy Button) have no deploy secrets — skip.
+    if: needs.resolve.outputs.deploy == 'true' && github.repository == 'Jaironlanda/isupmap'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Never run two deploys to the same environment at once, and never cancel one half-way.
+    concurrency:
+      group: deploy-${{ needs.resolve.outputs.target }}
+      cancel-in-progress: false
+    environment:
+      name: ${{ needs.resolve.outputs.target }}
+      url: ${{ vars.PUBLIC_URL }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CONFIG: ${{ needs.resolve.outputs.config }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Write ${{ needs.resolve.outputs.target }} config
+        env:
+          WRANGLER_CONFIG: ${{ needs.resolve.outputs.target == 'staging' && secrets.WRANGLER_STAGING_CONFIG || secrets.WRANGLER_PROD_CONFIG }}
+        run: |
+          if [ -z "$WRANGLER_CONFIG" ]; then
+            echo "::error::Config secret for ${{ needs.resolve.outputs.target }} is not set"; exit 1
+          fi
+          printf '%s\n' "$WRANGLER_CONFIG" > "$CONFIG"
+
+      - name: Check config matches wrangler.jsonc
+        run: node scripts/check-prod-config.mjs "$CONFIG"
+
+      # Schemas are additive (CREATE ... IF NOT EXISTS), so apply them before
+      # the new code goes live — it may depend on a new table or index.
+      - name: Apply D1 schemas
+        run: |
+          npx wrangler d1 execute DB --remote --yes --config "$CONFIG" --file=./schema.sql
+          npx wrangler d1 execute REPORTS_DB --remote --yes --config "$CONFIG" --file=./schema-reports.sql
+
+      - name: Deploy Worker
+        run: >
+          npx wrangler deploy --config "$CONFIG"
+          --tag "${GITHUB_REF_NAME}"
+          --message "${GITHUB_REF_NAME} (${GITHUB_SHA::7})"
+
+      - name: Summary
+        run: |
+          echo "Deployed tag \`${GITHUB_REF_NAME}\` → **${{ needs.resolve.outputs.target }}** ${{ vars.PUBLIC_URL }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # Reached when a plain v* tag is pushed: the tag is on the remote, but shipping it is
+  # a separate, deliberate act. Tells the operator exactly how to perform it.
+  awaiting-manual-release:
+    needs: resolve
+    if: needs.resolve.outputs.deploy != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain
+        run: |
+          {
+            echo "### Tag \`${GITHUB_REF_NAME}\` recorded — production was **not** deployed"
+            echo ""
+            echo "Production deploys are manual. To ship this tag:"
+            echo ""
+            echo '```bash'
+            echo "gh workflow run deploy.yml --ref ${GITHUB_REF_NAME} -f confirm_tag=${GITHUB_REF_NAME}"
+            echo '```'
+            echo ""
+            echo "Or: Actions → *Deploy* → **Run workflow** → set *Use workflow from* to"
+            echo "\`${GITHUB_REF_NAME}\` and retype the tag to confirm."
+          } >> "$GITHUB_STEP_SUMMARY"
