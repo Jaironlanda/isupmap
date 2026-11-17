@@ -62,7 +62,8 @@ and a mobile-friendly detail sheet.
 Cron (every 5m) ─▶ scheduled() ─▶ resolveStatus() × N      ┌─▶ Statuspage JSON   ({base}/api/v2/summary.json)
                        │           (1 retry on a blip)      ├─▶ RSS / Atom feed   (fast-xml-parser)
                        │   (src/sources.ts) ────────────────┘
-                       │                                    └─▶ HTTP reachability ping
+                       │                                    ├─▶ HTTP reachability ping
+                       │                                    └─▶ AWS Health current-events JSON
                        │       each fetch attempt ──────────────▶ Analytics Engine (FETCH_ANALYTICS)
                        │                                          (service id, url, latency, status code, attempt)
                        ├─▶ persist to D1 (src/db.ts): flap-dampen → upsert `current`,
@@ -153,6 +154,7 @@ Every service is normalized to one of: `up` · `degraded` · `down` · `unknown`
 | **Statuspage** | Reads `{base}/api/v2/summary.json` (Atlassian). `status.indicator` maps: `none`→`up`, `minor`/`maintenance`→`degraded`. A `major`/`critical` indicator is **tempered by breadth** — since the indicator reflects peak component severity, not how much is affected — so it only reads `down` when the major outage is broad (≥50% of components, or too few components to judge); a localized one (e.g. a single region) → `degraded`. The summary also yields component rollups and active incidents for the detail view. |
 | **RSS / Atom** | Parses the latest feed entry (via `fast-xml-parser`). Entries older than 48h are treated as resolved (`up`). A fresh entry mentioning *resolved/restored/operational* → `up`; *outage/down/major/critical* → `down`; anything else fresh → `degraded`. Heuristic. |
 | **HTTP ping**  | A plain `GET`. `2xx`/`3xx` → `up`; other response → `degraded`; network error or timeout → `down`. |
+| **AWS Health** | Reads the AWS Health Dashboard's public current-events JSON (served as UTF-16). An event is *active* when its latest update isn't the resolution marker and is under 48h old; long-running events with no recent updates are listed in the note but don't color the tile. Active → `degraded`; a disruption that is global, hits "Multiple services", or spans 2+ regions → `down`. |
 | *(any)*        | A failed fetch or timeout → `unknown` (treated as "no data" — never opens an incident or counts as downtime). |
 
 > Statuspage JSON is authoritative where available. RSS-based status is a
@@ -191,9 +193,9 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | CircleCI | Developer & Cloud | Statuspage | `https://status.circleci.com` |
 | Linode | Developer & Cloud | Statuspage | `https://status.linode.com` |
 | Render | Developer & Cloud | Statuspage | `https://status.render.com` |
-| AWS | Developer & Cloud | RSS | `https://status.aws.amazon.com/rss/all.rss` |
+| AWS | Developer & Cloud | AWS Health | `https://health.aws.amazon.com/public/currentevents` |
 | Google Cloud | Developer & Cloud | RSS | `https://status.cloud.google.com/en/feed.atom` |
-| Microsoft Azure | Developer & Cloud | RSS · **⊘ disabled** | `https://azure.status.microsoft/en-us/status/feed/` |
+| Microsoft Azure | Developer & Cloud | RSS | `https://azure.status.microsoft/en-us/status/feed/` |
 | Supabase | Developer & Cloud | Statuspage | `https://status.supabase.com` |
 | Fly.io | Developer & Cloud | Statuspage | `https://status.flyio.net` |
 | Railway | Developer & Cloud | RSS · **⊘ disabled** | `https://railway.betteruptime.com/feed.rss` |
@@ -307,7 +309,6 @@ Currently disabled (upstream no longer exposes a machine-readable feed, verified
 
 | Service | Reason |
 |---------|--------|
-| Microsoft Azure | Global status feed publishes no machine-readable incident items (empty channel). |
 | Auth0 | Statuspage JSON (`auth0.statuspage.io`) is stale — reports a phantom "minor outage" with no active incident while the live page shows all operational. |
 | Railway | Migrated to a JS-rendered status page (`status.railway.com`); the old Betterstack feed is empty. |
 | PagerDuty | `history.rss` now returns an HTML page instead of XML. |

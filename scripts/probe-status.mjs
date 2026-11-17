@@ -87,12 +87,29 @@ async function probeHttp(svc, url) {
 	return { verdict: res.ok || (res.status >= 300 && res.status < 400) ? "up" : `HTTP ${res.status}`, ms: Date.now() - start, status: res.status };
 }
 
+/** AWS Health current-events JSON (UTF-16 BOM'd). Lists every open event raw. */
+async function probeAwsHealth(svc, url) {
+	const buf = new Uint8Array(await (await get(url)).arrayBuffer());
+	let text;
+	if (buf[0] === 0xfe && buf[1] === 0xff) text = Buffer.from(buf.subarray(2)).swap16().toString("utf16le");
+	else if (buf[0] === 0xff && buf[1] === 0xfe) text = Buffer.from(buf.subarray(2)).toString("utf16le");
+	else text = Buffer.from(buf).toString("utf8");
+	const events = JSON.parse(text);
+	const lines = events.map((e) => {
+		const last = (e.event_log ?? []).reduce((a, l) => (!a || l.timestamp > a.timestamp ? l : a), null);
+		const at = new Date(Number(last?.timestamp ?? e.date) * 1000).toISOString();
+		return `sev=${e.status} last=${at} logStatus=${last?.status} ${e.service_name} (${e.region_name}): ${last?.summary ?? e.summary}`;
+	});
+	return { verdict: `${events.length} open event(s)`, lines };
+}
+
 async function probe(svc) {
 	try {
 		switch (svc.source.type) {
 			case "statuspage": return await probeStatuspage(svc, svc.source.base);
 			case "rss": return await probeRss(svc, svc.source.url);
 			case "http": return await probeHttp(svc, svc.source.url);
+			case "aws-health": return await probeAwsHealth(svc, svc.source.url);
 		}
 	} catch (err) {
 		return { verdict: "ERROR", note: err?.name === "AbortError" ? "timeout" : String(err?.message ?? err) };
@@ -116,6 +133,9 @@ for (const svc of list) {
 	} else if (svc.source.type === "rss") {
 		console.log(`${tag} → ${r.title ?? r.note ?? ""}  ${r.date ? `(${r.date})` : ""}`);
 		if (r.bodyLead) console.log(`${" ".repeat(30)}body: ${r.bodyLead}`);
+	} else if (svc.source.type === "aws-health") {
+		console.log(`${tag} → ${r.verdict ?? r.note ?? ""}`);
+		for (const l of r.lines ?? []) console.log(`${" ".repeat(30)}${l}`);
 	} else {
 		console.log(`${tag} → ${String(r.verdict).toUpperCase()}  ${r.ms != null ? `${r.ms}ms` : ""}  ${r.note ?? ""}`);
 	}

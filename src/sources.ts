@@ -402,6 +402,131 @@ async function fetchRss(service: Service, url: string, ctx?: FetchCtx): Promise<
 	return result(service, status, entry.title, details);
 }
 
+/** An AWS event whose latest update is older than this is treated as stale. */
+const AWS_FRESH_WINDOW_MS = RSS_FRESH_WINDOW_MS;
+/** AWS event severities (Health Dashboard): 1 informational, 2 degradation, 3 disruption. */
+const AWS_DISRUPTION = 3;
+/** Final event-log status AWS writes when an event is resolved. */
+const AWS_RESOLVED = 0;
+
+interface AwsEventLog {
+	status?: number | string;
+	timestamp?: number | string;
+	summary?: string;
+	message?: string;
+}
+
+interface AwsEvent {
+	arn?: string;
+	date?: number | string;
+	region_name?: string;
+	service_name?: string;
+	summary?: string;
+	status?: number | string;
+	event_log?: AwsEventLog[];
+}
+
+/**
+ * Decode a JSON body that may be UTF-16. The AWS current-events endpoint serves
+ * UTF-16 big-endian with a BOM, which `res.json()` (UTF-8) can't parse. Detect
+ * the encoding from the BOM — or, without one, from the NUL byte position of the
+ * leading ASCII `[`/`{` — and fall back to UTF-8.
+ */
+export function decodeJsonBytes(buf: ArrayBuffer): string {
+	const b = new Uint8Array(buf);
+	let be: boolean | null = null;
+	let start = 0;
+	if (b.length >= 2 && b[0] === 0xfe && b[1] === 0xff) [be, start] = [true, 2];
+	else if (b.length >= 2 && b[0] === 0xff && b[1] === 0xfe) [be, start] = [false, 2];
+	else if (b.length >= 2 && b[0] === 0 && b[1] !== 0) be = true;
+	else if (b.length >= 2 && b[0] !== 0 && b[1] === 0) be = false;
+	if (be === null) return new TextDecoder().decode(b);
+
+	// JS strings are UTF-16 code units, so surrogate pairs pass through intact.
+	const CHUNK = 8192;
+	let out = "";
+	const units = new Uint16Array(CHUNK);
+	for (let i = start; i + 1 < b.length; ) {
+		let n = 0;
+		for (; n < CHUNK && i + 1 < b.length; n++, i += 2) units[n] = be ? (b[i] << 8) | b[i + 1] : b[i] | (b[i + 1] << 8);
+		out += String.fromCharCode(...units.subarray(0, n));
+	}
+	return out;
+}
+
+/** The newest entry of an AWS event's log (logs aren't guaranteed sorted). */
+function awsLatestLog(event: AwsEvent): AwsEventLog | undefined {
+	let best: AwsEventLog | undefined;
+	for (const log of event.event_log ?? []) if (!best || Number(log.timestamp) > Number(best.timestamp)) best = log;
+	return best;
+}
+
+/**
+ * AWS Health Dashboard current events. The endpoint lists events that AWS hasn't
+ * closed yet, each tagged with a region and severity (1 informational, 2 degradation,
+ * 3 disruption). An event counts as **active** when its latest log entry isn't the
+ * resolution marker (status 0) and was posted within the freshness window. AWS posts
+ * hourly-ish updates during a live incident, but some regional events (e.g. the
+ * 2026 me-central-1 / me-south-1 facility damage) stay open for months without
+ * updates; those are surfaced in the note but don't color the tile, or AWS would be
+ * permanently red.
+ *
+ * Like {@link statuspageStatus}, severity is tempered by breadth: an active event is
+ * `degraded`, and only a disruption that is global, hits "Multiple services", or
+ * spans 2+ regions is `down`.
+ */
+async function fetchAwsHealth(service: Service, url: string, ctx?: FetchCtx): Promise<ServiceStatus> {
+	const src = service.source as Extract<ServiceSource, { type: "aws-health" }>;
+	const statusPageUrl = src.statusUrl ?? new URL(url).origin;
+
+	const res = await fetchWithRetry(url, {}, ctx);
+	if (!res.ok) return result(service, "unknown", `Health API returned HTTP ${res.status}`);
+
+	const events: unknown = JSON.parse(decodeJsonBytes(await res.arrayBuffer()));
+	if (!Array.isArray(events)) return result(service, "unknown", "Unexpected Health API response");
+
+	const now = Date.now();
+	const active: { event: AwsEvent; log: AwsEventLog | undefined; at: number; severity: number }[] = [];
+	const stale: AwsEvent[] = [];
+	for (const event of events as AwsEvent[]) {
+		const log = awsLatestLog(event);
+		if (log && Number(log.status) === AWS_RESOLVED) continue;
+		const at = Number(log?.timestamp ?? event.date) * 1000;
+		if (!Number.isFinite(at) || now - at >= AWS_FRESH_WINDOW_MS) {
+			stale.push(event);
+			continue;
+		}
+		active.push({ event, log, at, severity: Number(event.status ?? log?.status) || 1 });
+	}
+
+	const staleNote = stale.length
+		? `${stale.length} long-running event${stale.length === 1 ? "" : "s"} with no recent updates (${stale.map((e) => e.region_name ?? "unknown region").join(", ")})`
+		: undefined;
+
+	if (active.length === 0) {
+		return result(service, "up", "No active incidents reported", { url: statusPageUrl, note: staleNote });
+	}
+
+	const isGlobal = (e: AwsEvent) => /global/i.test(e.region_name ?? "") || /:health:global:/.test(e.arn ?? "");
+	const disruptions = active.filter((a) => a.severity >= AWS_DISRUPTION);
+	const disruptedRegions = new Set(disruptions.map((a) => a.event.region_name ?? a.event.arn ?? ""));
+	const broad = disruptions.some((a) => isGlobal(a.event) || /multiple services/i.test(a.event.service_name ?? "")) || disruptedRegions.size >= 2;
+	const status: StatusLevel = broad ? "down" : "degraded";
+
+	// Surface the most severe, then most recent, active event.
+	active.sort((a, b) => b.severity - a.severity || b.at - a.at);
+	const top = active[0];
+	const name = `${top.event.service_name ?? "AWS"} (${top.event.region_name ?? "unknown region"}): ${top.log?.summary ?? top.event.summary ?? "Active event"}`;
+	const updatedAt = new Date(top.at).toISOString();
+	const notes = [`${active.length} active event${active.length === 1 ? "" : "s"}`, staleNote].filter(Boolean).join("; ");
+	return result(service, status, name, {
+		url: statusPageUrl,
+		updatedAt,
+		incident: { name, updatedAt, url: statusPageUrl },
+		note: notes,
+	});
+}
+
 /**
  * Codes that mean "the server answered, it just refused this probe" — bot walls
  * and method/auth gates that big consumer sites serve to datacenter egress
@@ -446,6 +571,8 @@ export async function resolveStatus(service: Service, ae?: AnalyticsEngineDatase
 				return await fetchRss(service, service.source.url, ctx);
 			case "http":
 				return await fetchHttp(service, service.source.url, ctx);
+			case "aws-health":
+				return await fetchAwsHealth(service, service.source.url, ctx);
 		}
 	} catch (err) {
 		const reason = err instanceof Error && err.name === "AbortError" ? "Timed out" : "Unreachable";
