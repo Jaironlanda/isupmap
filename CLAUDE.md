@@ -24,7 +24,7 @@ Bindings ([wrangler.jsonc](wrangler.jsonc)): `ASSETS` (static), `DB` (D1), `SNAP
 | `npm test` (or `npm run test:watch`) | Run the Vitest suite |
 | `npm run typecheck` | Type-check without emitting |
 
-Tests use **Vitest** with the Cloudflare Workers pool (`@cloudflare/vitest-pool-workers`),
+Tests use **Vitest** with the Cloudflare Vitest plugin (`@cloudflare/vitest-plugin`),
 so they run inside workerd with real bindings. Config is [vitest.config.mts](vitest.config.mts)
 (`.mts` because the pool is ESM-only); specs live in [test/](test/). [test/db.test.ts](test/db.test.ts)
 exercises the D1 layer against a real local D1 (schema applied from [schema.sql](schema.sql)
