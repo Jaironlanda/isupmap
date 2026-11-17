@@ -169,8 +169,9 @@ wrangler.prod.jsonc
 wrangler.staging.jsonc
 .DS_Store
 
-# Local Claude Code config
-.claude/
+# Claude Code: project agents/settings are shared; personal overrides stay local
+.claude/settings.json
+.claude/settings.local.json
 
 # Local planning docs (not checked in)
 planning/
