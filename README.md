@@ -156,6 +156,7 @@ Every service is normalized to one of: `up` · `degraded` · `down` · `unknown`
 | **HTTP ping**  | A plain `GET`. `2xx`/`3xx` → `up`; other response → `degraded`; network error or timeout → `down`. |
 | **DocuSign** | Reads DocuSign's status-center JSON (`components.json` + `incidents.json`). The indicator is the worst of the `product` components and every active incident's impact (`performance_degradation`→minor, `service_disruption`→major, maintenance in progress→maintenance), then mapped with the Statuspage breadth rules. |
 | **status.io** | Reads `api.status.io/1.0/status/{pageId}`: the worst of the overall code and every component's code (100 operational, 200 maintenance, 300/400 degraded or partial disruption, 500 service disruption), mapped with the Statuspage breadth rules. |
+| **Instatus** | Reads an Instatus page's `summary.json` + `v2/components.json`: the worst leaf component plus every active incident's impact (maintenance in progress → maintenance), mapped with the Statuspage breadth rules. When the only open incidents are stale (no update in 14+ days) the components left non-operational aren't counted — Instatus doesn't link incidents to components. |
 | **PlayStation** | Reads `status.playstation.com/data/statuses/region/{region}.json` for each region. A country is affected when any of its service / resource `status` arrays holds a live entry; an `Outage` reads `down` only when it hits half the counted countries, else `degraded`. `ignoreCountries` skips standing restrictions (Russia). |
 | **AWS Health** | Reads the AWS Health Dashboard's public current-events JSON (served as UTF-16). An event is *active* when its latest update isn't the resolution marker and is under 48h old; long-running events with no recent updates are listed in the note but don't color the tile. Active → `degraded`; a disruption that is global, hits "Multiple services", or spans 2+ regions → `down`. |
 | *(any)*        | A failed fetch or timeout → `unknown` (treated as "no data" — never opens an incident or counts as downtime). |
@@ -287,14 +288,14 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | YouTube | Social Media | HTTP ping | `https://www.youtube.com` |
 | TikTok | Social Media | HTTP ping | `https://www.tiktok.com` |
 | WhatsApp | Social Media | HTTP ping | `https://www.whatsapp.com` |
-| LinkedIn | Social Media | HTTP ping | `https://www.linkedin.com` |
+| LinkedIn | Social Media | Statuspage | `https://www.linkedin-status.com` |
 | Telegram | Social Media | HTTP ping | `https://telegram.org` |
 | Reddit | Social Media | Statuspage | `https://www.redditstatus.com` |
-| Pinterest | Social Media | HTTP ping | `https://www.pinterest.com` |
+| Pinterest | Social Media | Statuspage | `https://www.pintereststatus.com` |
 | Snapchat | Social Media | HTTP ping | `https://www.snapchat.com` |
-| Bluesky | Social Media | HTTP ping | `https://bsky.app` |
-| Threads | Social Media | HTTP ping | `https://www.threads.net` |
-| Mastodon | Social Media | HTTP ping | `https://mastodon.social` |
+| Bluesky | Social Media | Instatus | `https://status.bsky.app` |
+| Threads | Social Media | HTTP ping | `https://www.threads.com` |
+| Mastodon | Social Media | Instatus | `https://status.mastodon.social` |
 | Tumblr | Social Media | HTTP ping | `https://www.tumblr.com` |
 
 ### Disabled services

@@ -1119,6 +1119,81 @@ describe("PlayStation Network region JSON (playstation)", () => {
 	});
 });
 
+describe("Instatus page (instatus)", () => {
+	const base = "https://status.mastodon.social";
+	const mastodon = svc({ type: "instatus", base });
+	const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+	const comps = (statuses: Record<string, string>) =>
+		JSON.stringify({
+			components: [
+				{ id: "grp", name: "Website and App", status: "OPERATIONAL", group: null },
+				...Object.entries(statuses).map(([name, status], i) => ({ id: `c${i}`, name, status, group: i === 0 ? { id: "grp", name: "Website and App" } : null })),
+			],
+		});
+	const summary = (o: { status?: string; incidents?: unknown[]; maintenances?: unknown[] } = {}) =>
+		JSON.stringify({ page: { name: "mastodon.social", url: base, status: o.status ?? "UP" }, activeIncidents: o.incidents ?? [], activeMaintenances: o.maintenances ?? [] });
+	function serve(sum: string, components: string | number) {
+		fetchSpy.mockImplementation(async (url: string) => {
+			if (url === `${base}/summary.json`) return reply(sum);
+			if (url === `${base}/v2/components.json`) return typeof components === "number" ? reply("", components) : reply(components);
+			throw new Error(`unexpected ${url}`);
+		});
+	}
+	const healthy = { "Website & API": "OPERATIONAL", "Background queues": "OPERATIONAL", "Media storage": "OPERATIONAL", "Streaming API": "OPERATIONAL" };
+
+	it("is up when every leaf component is operational (group containers not counted)", async () => {
+		serve(summary(), comps(healthy));
+		const r = await resolveStatus(mastodon);
+		expect(r.status).toBe("up");
+		expect(r.details?.components).toEqual({ operational: 4, total: 4, impacted: [] });
+		expect(r.details?.url).toBe(base);
+	});
+
+	it("is degraded for a partial outage with a fresh incident, naming it", async () => {
+		serve(
+			summary({ status: "ONEPARTIALOUTAGE", incidents: [{ name: "Hetzner Connectivity Issues", status: "INVESTIGATING", impact: "PARTIALOUTAGE", updatedAt: ago(0) }] }),
+			comps({ ...healthy, "Background queues": "PARTIALOUTAGE" }),
+		);
+		const r = await resolveStatus(mastodon);
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Hetzner Connectivity Issues");
+		expect(r.details?.components?.impacted).toEqual(["Background queues"]);
+	});
+
+	it("is down for a broad major outage", async () => {
+		serve(summary({ status: "MANYMAJOROUTAGES" }), comps({ "Website & API": "MAJOROUTAGE", "Background queues": "MAJOROUTAGE", "Media storage": "OPERATIONAL", "Streaming API": "OPERATIONAL" }));
+		expect((await resolveStatus(mastodon)).status).toBe("down");
+	});
+
+	it("drops components left degraded when only stale incidents are open", async () => {
+		// mastodon.social's Oct 2026 Hetzner incident: left Monitoring, Background queues still partial.
+		serve(
+			summary({ status: "ONEPARTIALOUTAGE", incidents: [{ name: "Networking outage at Hetzner", status: "MONITORING", impact: "OPERATIONAL", updatedAt: ago(28) }] }),
+			comps({ ...healthy, "Background queues": "PARTIALOUTAGE" }),
+		);
+		const r = await resolveStatus(mastodon);
+		expect(r.status).toBe("up");
+		expect(r.details?.components).toEqual({ operational: 3, total: 3, impacted: [] });
+		expect(r.details?.note).toContain("Stale incident not counted (no update in 28 days): Networking outage at Hetzner");
+	});
+
+	it("still counts a degraded component with no open incident, and in-progress maintenance", async () => {
+		serve(summary(), comps({ ...healthy, "Media storage": "DEGRADEDPERFORMANCE" }));
+		expect((await resolveStatus(mastodon)).status).toBe("degraded");
+		serve(summary({ maintenances: [{ name: "Database upgrade", status: "INPROGRESS", updatedAt: ago(0) }, { name: "Later", status: "NOTSTARTEDYET" }] }), comps(healthy));
+		const r = await resolveStatus(mastodon);
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Database upgrade");
+	});
+
+	it("falls back to the page status when components.json fails", async () => {
+		serve(summary({ status: "ONEMAJOROUTAGE" }), 500);
+		expect((await resolveStatus(mastodon)).status).toBe("down");
+		serve(summary(), 500);
+		expect((await resolveStatus(mastodon)).status).toBe("up");
+	});
+});
+
 describe("disabled services", () => {
 	it("short-circuits to unknown without fetching, surfacing the reason", async () => {
 		const reason = "Upstream no longer publishes a usable feed.";
