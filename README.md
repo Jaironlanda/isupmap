@@ -248,11 +248,11 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Discord | Communication | Statuspage | `https://discordstatus.com` |
 | Slack | Communication | RSS | `https://slack-status.com/feed/rss` |
 | Zoom | Communication | Statuspage | `https://www.zoomstatus.com` |
-| Twilio | Communication | Statuspage | `https://status.twilio.com` |
-| SendGrid | Communication | Statuspage | `https://status.sendgrid.com` |
+| Twilio | Communication | Statuspage (ignores `CARRIER NETWORK`) | `https://status.twilio.com` |
+| SendGrid | Communication | Statuspage (SendGrid components) | `https://status.twilio.com` |
 | Resend | Communication | Statuspage | `https://resend-status.com` |
 | Mailgun | Communication | Statuspage | `https://status.mailgun.com` |
-| Intercom | Communication | Statuspage | `https://www.intercomstatus.com` |
+| Intercom | Communication | Statuspage | `https://www.finstatus.com` |
 | HubSpot | Communication | Statuspage | `https://status.hubspot.com` |
 | Atlassian | Productivity & Media | Statuspage | `https://status.atlassian.com` |
 | Dropbox | Productivity & Media | Statuspage | `https://status.dropbox.com` |
