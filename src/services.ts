@@ -112,10 +112,12 @@ export const SERVICES: Service[] = [
 	{ id: "algolia", name: "Algolia", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://status.algolia.com/history.rss" }, disabled: "Algolia's RSS feed now returns an HTML page instead of a feed, so its status can't be resolved." },
 	// GitLab uses status.io (not Atlassian Statuspage) — RSS is the reliable path.
 	{ id: "gitlab", name: "GitLab", category: "Developer & Cloud", weight: 6, source: { type: "rss", url: "https://status.gitlab.com/pages/5b36dc6502d06804c08349f7/rss" } },
-	// Docker uses status.io (not Atlassian Statuspage) — RSS is the reliable path.
-	{ id: "docker", name: "Docker", category: "Developer & Cloud", weight: 6, source: { type: "rss", url: "https://www.dockerstatus.com/pages/533c6539221ae15e3f000031/rss" } },
-	// Appwrite uses Instatus — RSS is the reliable path.
-	{ id: "appwrite", name: "Appwrite", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://status.appwrite.online/feed.rss" } },
+	// Docker moved from status.io to incident.io, which serves a Statuspage-compatible
+	// summary.json (the old status.io RSS URL now 404s).
+	{ id: "docker", name: "Docker", category: "Developer & Cloud", weight: 6, source: { type: "statuspage", base: "https://www.dockerstatus.com" } },
+	// Appwrite moved to appwrite.online (status.appwrite.io redirects there); it publishes
+	// an Atom feed with one entry per update and the state as a title suffix ("…: Resolved").
+	{ id: "appwrite", name: "Appwrite", category: "Developer & Cloud", weight: 4, source: { type: "rss", url: "https://appwrite.online/feed.atom", statusUrl: "https://appwrite.online" } },
 	// Firebase publishes an Atom incident feed.
 	{ id: "firebase", name: "Firebase", category: "Developer & Cloud", weight: 7, source: { type: "rss", url: "https://status.firebase.google.com/en/feed.atom", statusUrl: "https://status.firebase.google.com" } },
 	// Firecrawl uses Betterstack — RSS feed confirmed working.
