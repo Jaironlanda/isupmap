@@ -4,7 +4,7 @@
  * Schema (queryable via the AE SQL API / `wrangler analytics-engine sql`):
  *   index1   — service ID  (efficient per-service filtering)
  *   blob1    — URL fetched
- *   blob2    — source type: "statuspage" | "rss" | "http" | "aws-health"
+ *   blob2    — source type: "statuspage" | "rss" | "http" | "aws-health" | "docusign" | "statusio" | "playstation"
  *   blob3    — error message (empty string when the request succeeded)
  *   double1  — HTTP status code (0 for network / timeout errors)
  *   double2  — latency in milliseconds

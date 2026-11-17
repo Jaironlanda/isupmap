@@ -89,8 +89,10 @@ function formatUpdated(updatedAt: number | null): string {
 /** Best-effort link to the provider's own status page, derived from the source. */
 function statusPageUrl(service: Service): string {
 	const src = service.source;
-	if (src.type === "statuspage") return src.base;
 	if (src.statusUrl) return src.statusUrl;
+	if (src.type === "statuspage") return src.base;
+	if (src.type === "statusio") return `https://status.io/pages/${src.pageId}`;
+	if (src.type === "playstation") return "https://status.playstation.com";
 	try {
 		return new URL(src.url).origin;
 	} catch {

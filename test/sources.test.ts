@@ -1007,6 +1007,118 @@ describe("Lemon Squeezy RSS feed (Oh Dear)", () => {
 	});
 });
 
+describe("status.io public API (statusio)", () => {
+	const roblox = svc({ type: "statusio", pageId: "59db90dbcdeb2f04dadcf16d", statusUrl: "https://status.roblox.com" });
+	const body = (overall: number, codes: Record<string, number>, extra: Record<string, unknown> = {}) =>
+		JSON.stringify({
+			result: {
+				status_overall: { updated: "2026-11-10T06:00:03.539Z", status: overall === 100 ? "Operational" : "Degraded Performance", status_code: overall },
+				status: [
+					{ name: "Player", status_code: overall, containers: Object.entries(codes).map(([name, status_code]) => ({ name, status_code })) },
+				],
+				incidents: [],
+				maintenance: { active: [], upcoming: [] },
+				...extra,
+			},
+		});
+	const healthy = { Website: 100, "Mobile App": 100, Games: 100, Avatar: 100 };
+
+	it("reads the API for the page id and is up when everything is 100", async () => {
+		fetchSpy.mockResolvedValue(reply(body(100, healthy)));
+		const r = await resolveStatus(roblox);
+		expect(fetchSpy.mock.calls[0][0]).toBe("https://api.status.io/1.0/status/59db90dbcdeb2f04dadcf16d");
+		expect(r.status).toBe("up");
+		expect(r.details?.components).toEqual({ operational: 4, total: 4, impacted: [] });
+		expect(r.details?.url).toBe("https://status.roblox.com");
+	});
+
+	it("is degraded for degraded performance and names the incident", async () => {
+		fetchSpy.mockResolvedValue(reply(body(300, { ...healthy, "Game Join": 300 }, { incidents: [{ name: "Players unable to join experiences" }] })));
+		const r = await resolveStatus(roblox);
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Players unable to join experiences");
+		expect(r.details?.components?.impacted).toEqual(["Player · Game Join"]);
+	});
+
+	it("is down for a broad service disruption, degraded when localized", async () => {
+		fetchSpy.mockResolvedValue(reply(body(500, { Website: 500, "Mobile App": 500, Games: 500, Avatar: 100 })));
+		expect((await resolveStatus(roblox)).status).toBe("down");
+		fetchSpy.mockResolvedValue(reply(body(500, { ...healthy, Avatar: 500 })));
+		expect((await resolveStatus(roblox)).status).toBe("degraded");
+	});
+
+	it("reads active maintenance as degraded with its name", async () => {
+		fetchSpy.mockResolvedValue(reply(body(200, { ...healthy, Avatar: 200 }, { maintenance: { active: [{ name: "Developer Forum Scheduled Maintenance" }], upcoming: [] } })));
+		const r = await resolveStatus(roblox);
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Developer Forum Scheduled Maintenance");
+	});
+});
+
+describe("PlayStation Network region JSON (playstation)", () => {
+	const psn = svc({ type: "playstation", regions: ["SCEA", "SCEE"], ignoreCountries: ["RU"], statusUrl: "https://status.playstation.com" });
+	const fresh = () => new Date().toISOString();
+	const entry = (statusType = "Outage", modifiedDate = fresh()) => ({ statusId: "x", statusType, modifiedDate, startDate: modifiedDate });
+	const country = (code: string, o: { status?: unknown[]; service?: { name: string; status?: unknown[]; resource?: unknown[] } } = {}) => ({
+		countryCode: code,
+		countryName: code,
+		status: o.status ?? [],
+		services: [
+			{ serviceName: o.service?.name ?? "PlayStation Store", status: o.service?.status ?? [], resources: [{ resourceName: "Purchase", status: o.service?.resource ?? [] }] },
+		],
+	});
+	const region = (countries: unknown[]) => JSON.stringify({ regionName: "R", status: [], countries });
+	function serve(regions: Record<string, string | number>) {
+		fetchSpy.mockImplementation(async (url: string) => {
+			const code = /region\/(\w+)\.json$/.exec(url)?.[1] ?? "";
+			const v = regions[code];
+			if (v == null) throw new Error(`unexpected ${url}`);
+			return typeof v === "number" ? reply("", v) : reply(v);
+		});
+	}
+	// Russia's standing restriction entries, present in the live SCEE file.
+	const russia = country("RU", { status: [entry()], service: { name: "Account Management", status: [entry()], resource: [entry()] } });
+
+	it("is up when every counted country is clear, ignoring Russia's standing outage", async () => {
+		serve({ SCEA: region([country("US"), country("CA")]), SCEE: region([country("GB"), country("DE"), russia]) });
+		const r = await resolveStatus(psn);
+		expect(r.status).toBe("up");
+		expect(r.details?.components).toEqual({ operational: 4, total: 4, impacted: [] });
+		expect(r.details?.note).toContain("Not counted: RU");
+	});
+
+	it("is degraded for an outage in a minority of countries, naming the service", async () => {
+		serve({ SCEA: region([country("US", { service: { name: "PlayStation Store", resource: [entry()] } }), country("CA")]), SCEE: region([country("GB"), country("DE")]) });
+		const r = await resolveStatus(psn);
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("PlayStation Store — 1 country");
+		expect(r.details?.components?.impacted).toEqual(["US"]);
+	});
+
+	it("is down when an outage hits at least half the countries", async () => {
+		const out = (c: string) => country(c, { status: [entry()], service: { name: "Gaming and Social", status: [entry()] } });
+		serve({ SCEA: region([out("US"), out("CA")]), SCEE: region([country("GB"), country("DE")]) });
+		expect((await resolveStatus(psn)).status).toBe("down");
+	});
+
+	it("reads maintenance as degraded and ignores stale entries", async () => {
+		serve({ SCEA: region([country("US", { service: { name: "PlayStation Network", status: [entry("Maintenance")] } }), country("CA")]), SCEE: region([]) });
+		expect((await resolveStatus(psn)).status).toBe("degraded");
+		const old = new Date(Date.now() - 30 * 86_400_000).toISOString();
+		serve({ SCEA: region([country("US", { service: { name: "PlayStation Store", resource: [entry("Outage", old)] } }), country("CA")]), SCEE: region([]) });
+		expect((await resolveStatus(psn)).status).toBe("up");
+	});
+
+	it("notes a failed region, and is unknown when every region fails", async () => {
+		serve({ SCEA: region([country("US")]), SCEE: 500 });
+		const r = await resolveStatus(psn);
+		expect(r.status).toBe("up");
+		expect(r.details?.note).toContain("Region data unavailable: SCEE");
+		serve({ SCEA: 404, SCEE: 500 });
+		expect((await resolveStatus(psn)).status).toBe("unknown");
+	});
+});
+
 describe("disabled services", () => {
 	it("short-circuits to unknown without fetching, surfacing the reason", async () => {
 		const reason = "Upstream no longer publishes a usable feed.";
