@@ -187,9 +187,10 @@ export const SERVICES: Service[] = [
 	{ id: "shopify", name: "Shopify", category: "Payments", weight: 6, source: { type: "statuspage", base: "https://www.shopifystatus.com" } },
 	{ id: "plaid", name: "Plaid", category: "Payments", weight: 4, source: { type: "statuspage", base: "https://status.plaid.com" } },
 	{ id: "paddle", name: "Paddle", category: "Payments", weight: 3, source: { type: "statuspage", base: "https://paddlestatus.com" } },
-	// Lemon Squeezy's Oh Dear feed URL now serves an HTML subscribe page rather
-	// than a feed, so its status can't be resolved.
-	{ id: "lemonsqueezy", name: "Lemon Squeezy", category: "Payments", weight: 3, source: { type: "rss", url: "https://ohdear.app/status-page/lemon-squeezy-status/subscribe-rss", statusUrl: "https://status.lemonsqueezy.com" }, disabled: "Lemon Squeezy's status feed now returns an HTML page instead of a feed, so its status can't be resolved." },
+	// Lemon Squeezy's Oh Dear page serves its feed on its own domain (the old
+	// ohdear.app/…/subscribe-rss URL is now an HTML subscribe page). Entries are
+	// monitor events: "Checkout appears to be down." / "Checkout has recovered."
+	{ id: "lemonsqueezy", name: "Lemon Squeezy", category: "Payments", weight: 3, source: { type: "rss", url: "https://status.lemonsqueezy.com/rss", statusUrl: "https://status.lemonsqueezy.com" } },
 	{ id: "square", name: "Square", category: "Payments", weight: 5, source: { type: "statuspage", base: "https://www.issquareup.com" } },
 	{ id: "klarna", name: "Klarna", category: "Payments", weight: 4, source: { type: "statuspage", base: "https://status.klarna.com" } },
 	// PayPal uses a custom status page (not Atlassian Statuspage) — RSS is the reliable path.
