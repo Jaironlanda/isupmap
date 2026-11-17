@@ -108,7 +108,7 @@ interface SummaryIncident {
 }
 
 interface StatuspageSummary {
-	page?: { id?: string; url?: string; updated_at?: string };
+	page?: { id?: string; name?: string; url?: string; updated_at?: string };
 	status?: { indicator?: string; description?: string };
 	components?: SummaryComponent[];
 	incidents?: SummaryIncident[];
@@ -187,6 +187,41 @@ async function fetchAllComponents(base: string, ctx?: FetchCtx): Promise<Summary
 }
 
 /**
+ * Fold sibling Statuspage pages into `data` (components and incidents appended,
+ * worst indicator wins, labelled with that page's name) — for a vendor that
+ * splits status across per-product pages whose hub carries none of their
+ * incidents (Atlassian). A page that fails to load is skipped and noted.
+ */
+async function mergeExtraPages(data: StatuspageSummary, bases: string[], notes: string[], ctx?: FetchCtx): Promise<void> {
+	const pages = await Promise.all(
+		bases.map(async (b) => {
+			try {
+				const res = await fetchWithRetry(`${b.replace(/\/$/, "")}/api/v2/summary.json`, {}, ctx);
+				return res.ok ? ((await res.json()) as StatuspageSummary) : null;
+			} catch {
+				return null;
+			}
+		}),
+	);
+	let indicator = data.status?.indicator ?? "none";
+	let description = data.status?.description ?? "";
+	pages.forEach((page, i) => {
+		if (!page) {
+			notes.push(`${new URL(bases[i]).hostname} unavailable (not counted)`);
+			return;
+		}
+		data.components = [...(data.components ?? []), ...(page.components ?? [])];
+		data.incidents = [...(data.incidents ?? []), ...(page.incidents ?? [])];
+		const ind = page.status?.indicator ?? "none";
+		if ((INDICATOR_RANK[ind] ?? 0) > (INDICATOR_RANK[indicator] ?? 0)) {
+			indicator = ind;
+			description = `${page.page?.name ?? new URL(bases[i]).hostname}: ${page.status?.description ?? ind}`;
+		}
+	});
+	data.status = { indicator, description };
+}
+
+/**
  * Atlassian Statuspage. We read `summary.json` (a superset of `status.json`)
  * so the hover card can show component rollups and active incidents.
  *
@@ -202,6 +237,7 @@ async function fetchAllComponents(base: string, ctx?: FetchCtx): Promise<Summary
  *     ones naming no component at all) are dropped too.
  *   - Stale incidents (no update in {@link STALE_INCIDENT_MS}) are dropped along
  *     with the components they cover, and listed in the note.
+ * `extraBases` pages are merged in first (see {@link mergeExtraPages}).
  * An incident counts unless every component it names is discounted.
  */
 async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): Promise<ServiceStatus> {
@@ -213,6 +249,8 @@ async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): 
 	const src = service.source as Extract<ServiceSource, { type: "statuspage" }>;
 	const excludeGroups = new Set(src.excludeGroups ?? []);
 	const onlyComponents = src.components?.length ? new Set(src.components) : null;
+	const notes: string[] = [];
+	if (src.extraBases?.length) await mergeExtraPages(data, src.extraBases, notes, ctx);
 	let all = data.components ?? [];
 	if (INCIDENT_IO_PAGE_ID_RE.test(data.page?.id ?? "")) {
 		const full = await fetchAllComponents(root, ctx);
@@ -247,7 +285,6 @@ async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): 
 	let indicator = data.status?.indicator ?? "none";
 	let description = data.status?.description ?? "";
 	let incidents = allIncidents;
-	const notes: string[] = [];
 
 	if (onlyComponents || excludedGroupIds.size > 0 || stale.length > 0) {
 		// An incident naming no component is page-wide — unless only selected components count.
@@ -653,6 +690,82 @@ async function fetchAwsHealth(service: Service, url: string, ctx?: FetchCtx): Pr
 	});
 }
 
+interface DocusignComponent {
+	name?: string;
+	type?: string;
+	status?: string;
+}
+
+interface DocusignIncident {
+	title?: string;
+	type?: string;
+	status?: string;
+	impact?: string;
+	updatedAt?: string;
+}
+
+/** DocuSign component status / incident impact → the equivalent Statuspage indicator. */
+const DOCUSIGN_INDICATOR: Record<string, string> = {
+	available: "none",
+	performance_degradation: "minor",
+	service_disruption: "major",
+	maintenance: "maintenance",
+	under_maintenance: "maintenance",
+};
+/** Incident lifecycle states that mean the event is no longer (or not yet) affecting service. */
+const DOCUSIGN_INACTIVE = new Set(["resolved", "completed", "canceled", "cancelled", "scheduled"]);
+
+/**
+ * DocuSign's status center (health.docusign.com) serves its own JSON: a
+ * component tree (`components.json` — products rolling up per-site children)
+ * and an incident list (`incidents.json`, ~6 months, maintenance included).
+ * The rollup is over `product` components; the indicator is the worst of those
+ * plus every active incident's impact (a maintenance in progress reads as
+ * maintenance), then mapped with the Statuspage breadth rules. Incidents are
+ * best-effort: if that file fails, components alone decide.
+ */
+async function fetchDocusign(service: Service, url: string, ctx?: FetchCtx): Promise<ServiceStatus> {
+	const src = service.source as Extract<ServiceSource, { type: "docusign" }>;
+	const root = url.replace(/\/$/, "");
+	const [compRes, incRes] = await Promise.all([
+		fetchWithRetry(`${root}/components.json`, {}, ctx),
+		fetchWithRetry(`${root}/incidents.json`, {}, ctx).catch(() => null),
+	]);
+	if (!compRes.ok) return result(service, "unknown", `Status API returned HTTP ${compRes.status}`);
+	const all = ((await compRes.json()) as { components?: DocusignComponent[] }).components ?? [];
+	let incidentList: DocusignIncident[] = [];
+	if (incRes?.ok) {
+		try {
+			incidentList = ((await incRes.json()) as { incidents?: DocusignIncident[] }).incidents ?? [];
+		} catch {
+			// Incidents are best-effort.
+		}
+	}
+
+	const products = all.filter((c) => c.type === "product");
+	const level = (status?: string) => DOCUSIGN_INDICATOR[status ?? ""] ?? (status ? "minor" : "none");
+	const impacted = products.filter((c) => level(c.status) !== "none").map((c) => c.name ?? "Unknown");
+	const majorOutages = products.filter((c) => level(c.status) === "major").length;
+
+	const now = Date.now();
+	const active = incidentList.filter(
+		(i) => !DOCUSIGN_INACTIVE.has(i.status ?? "") && !(i.updatedAt != null && now - Date.parse(i.updatedAt) >= STALE_INCIDENT_MS),
+	);
+	let indicator = "none";
+	for (const c of products) indicator = worstIndicator(indicator, level(c.status));
+	for (const i of active) indicator = worstIndicator(indicator, i.type === "maintenance" ? "maintenance" : level(i.impact));
+
+	const status = statuspageStatus(indicator, products.length, majorOutages);
+	const incident = active.find((i) => i.type !== "maintenance") ?? active[0];
+	const description =
+		indicator === "none" ? "All Systems Operational" : (incident?.title ?? (impacted.length ? `Impacted: ${impacted.join(", ")}` : indicator));
+	return result(service, status, description, {
+		url: src.statusUrl ?? new URL(root).origin,
+		components: products.length ? { operational: products.length - impacted.length, total: products.length, impacted } : undefined,
+		incident: incident ? { name: incident.title ?? "Active incident", impact: incident.impact, updatedAt: incident.updatedAt } : undefined,
+	});
+}
+
 /**
  * Codes that mean "the server answered, it just refused this probe" — bot walls
  * and method/auth gates that big consumer sites serve to datacenter egress
@@ -699,6 +812,8 @@ export async function resolveStatus(service: Service, ae?: AnalyticsEngineDatase
 				return await fetchHttp(service, service.source.url, ctx);
 			case "aws-health":
 				return await fetchAwsHealth(service, service.source.url, ctx);
+			case "docusign":
+				return await fetchDocusign(service, service.source.url, ctx);
 		}
 	} catch (err) {
 		const reason = err instanceof Error && err.name === "AbortError" ? "Timed out" : "Unreachable";

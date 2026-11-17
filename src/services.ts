@@ -12,6 +12,8 @@
  *   - `aws-health`: The AWS Health Dashboard's public current-events JSON
  *                   (the legacy status.aws.amazon.com RSS stopped receiving
  *                   new events in Sep 2026).
+ *   - `docusign`:   DocuSign's status-center JSON (status.docusign.com moved
+ *                   off Statuspage to health.docusign.com in 2026).
  *
  * `weight` is a relative prominence used to size tiles in the treemap (the
  * stock-map look) — bigger services get bigger tiles. It carries no meaning
@@ -25,13 +27,16 @@ export type ServiceSource =
 	// from the remaining components + incidents (for per-location noise, e.g. Cloudflare PoPs).
 	// components: count only these component names (and incidents naming them) — for a service
 	// listed as one component on another provider's page (e.g. Replicate on cloudflarestatus.com).
-	| { type: "statuspage"; base: string; excludeGroups?: string[]; components?: string[]; statusUrl?: string }
+	// extraBases: sibling Statuspage pages merged in (worst indicator wins) — for a vendor whose hub page
+	// carries none of its per-product pages' incidents (Atlassian).
+	| { type: "statuspage"; base: string; excludeGroups?: string[]; components?: string[]; extraBases?: string[]; statusUrl?: string }
 	// statusUrl overrides the "Visit status page" link (defaults to feed URL origin).
 	// titleTags: count only entries whose title starts with "[Tag]" for one of these tags (case-insensitive) —
 	// for a feed shared by several products, e.g. status.x.ai covers both Grok and Cursor.
 	| { type: "rss"; url: string; statusUrl?: string; titleTags?: string[] }
 	| { type: "http"; url: string; statusUrl?: string } // statusUrl overrides when the ping URL isn't the status page
-	| { type: "aws-health"; url: string; statusUrl?: string }; // AWS Health Dashboard current-events JSON
+	| { type: "aws-health"; url: string; statusUrl?: string } // AWS Health Dashboard current-events JSON
+	| { type: "docusign"; url: string; statusUrl?: string }; // DocuSign status center JSON (components.json + incidents.json under url)
 
 export interface Service {
 	id: string;
@@ -207,14 +212,18 @@ export const SERVICES: Service[] = [
 	{ id: "hubspot", name: "HubSpot", category: "Communication", weight: 5, source: { type: "statuspage", base: "https://status.hubspot.com" } },
 
 	// --- Productivity & Media ---
-	{ id: "atlassian", name: "Atlassian", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.atlassian.com" } },
+	// status.atlassian.com is a hub: it links ~20 per-product pages and carries none of their
+	// incidents (its last was 2025-03), so merge in the core products' pages.
+	{ id: "atlassian", name: "Atlassian", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.atlassian.com", extraBases: ["https://jira-software.status.atlassian.com", "https://confluence.status.atlassian.com", "https://jira-service-management.status.atlassian.com"] } },
 	{ id: "dropbox", name: "Dropbox", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.dropbox.com" } },
-	{ id: "datadog", name: "Datadog", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.datadoghq.com" } },
+	// Datadog left Statuspage: the /api/v2 JSON now 403s (S3 AccessDenied), but the
+	// Statuspage-format incident history feed is still published.
+	{ id: "datadog", name: "Datadog", category: "Productivity & Media", weight: 4, source: { type: "rss", url: "https://status.datadoghq.com/history.rss", statusUrl: "https://status.datadoghq.com" } },
 	{ id: "figma", name: "Figma", category: "Productivity & Media", weight: 6, source: { type: "statuspage", base: "https://status.figma.com" } },
 	{ id: "box", name: "Box", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.box.com" } },
 	{ id: "squarespace", name: "Squarespace", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.squarespace.com" } },
-	// Wikipedia has no public status feed — a plain reachability ping demonstrates the HTTP path.
-	{ id: "wikipedia", name: "Wikipedia", category: "Productivity & Media", weight: 7, source: { type: "http", url: "https://www.wikipedia.org" } },
+	// Wikimedia publishes a Statuspage (Reading / Editing components).
+	{ id: "wikipedia", name: "Wikipedia", category: "Productivity & Media", weight: 7, source: { type: "statuspage", base: "https://www.wikimediastatus.net" } },
 	{ id: "linear", name: "Linear", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://linearstatus.com" } },
 	{ id: "notion", name: "Notion", category: "Productivity & Media", weight: 7, source: { type: "statuspage", base: "https://www.notion-status.com" } },
 	{ id: "cloudinary", name: "Cloudinary", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.cloudinary.com" } },
@@ -223,7 +232,8 @@ export const SERVICES: Service[] = [
 	{ id: "miro", name: "Miro", category: "Productivity & Media", weight: 5, source: { type: "statuspage", base: "https://status.miro.com" } },
 	{ id: "canva", name: "Canva", category: "Productivity & Media", weight: 6, source: { type: "statuspage", base: "https://www.canvastatus.com" } },
 	{ id: "webflow", name: "Webflow", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.webflow.com" } },
-	{ id: "docusign", name: "DocuSign", category: "Productivity & Media", weight: 4, source: { type: "statuspage", base: "https://status.docusign.com" } },
+	// status.docusign.com redirects to the new health.docusign.com status center (no Statuspage API).
+	{ id: "docusign", name: "DocuSign", category: "Productivity & Media", weight: 4, source: { type: "docusign", url: "https://health.docusign.com/production/1ds/ssg/apps/health/dynamic", statusUrl: "https://health.docusign.com/status" } },
 
 	// --- Gaming & Entertainment ---
 	{ id: "twitch", name: "Twitch", category: "Gaming & Entertainment", weight: 7, source: { type: "statuspage", base: "https://status.twitch.com" } },
