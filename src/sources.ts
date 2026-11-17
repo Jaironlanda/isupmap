@@ -196,6 +196,10 @@ async function fetchAllComponents(base: string, ctx?: FetchCtx): Promise<Summary
  *   - `excludeGroups`: components in those groups are dropped. For pages whose
  *     indicator is dominated by per-location noise — Cloudflare lists ~345
  *     datacenters, dozens always "Re-routed" or in maintenance.
+ *   - `components`: only the named components count — for a service that is a
+ *     single component on another provider's page (Replicate on
+ *     cloudflarestatus.com). Incidents naming no counted component (including
+ *     ones naming no component at all) are dropped too.
  *   - Stale incidents (no update in {@link STALE_INCIDENT_MS}) are dropped along
  *     with the components they cover, and listed in the note.
  * An incident counts unless every component it names is discounted.
@@ -208,6 +212,7 @@ async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): 
 	const data = (await res.json()) as StatuspageSummary;
 	const src = service.source as Extract<ServiceSource, { type: "statuspage" }>;
 	const excludeGroups = new Set(src.excludeGroups ?? []);
+	const onlyComponents = src.components?.length ? new Set(src.components) : null;
 	let all = data.components ?? [];
 	if (INCIDENT_IO_PAGE_ID_RE.test(data.page?.id ?? "")) {
 		const full = await fetchAllComponents(root, ctx);
@@ -227,7 +232,8 @@ async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): 
 	const excludedGroupIds = new Set(all.filter((c) => c.group === true && excludeGroups.has(c.name ?? "")).map((c) => c.id));
 	const inExcludedGroup = (c: SummaryComponent) => excludedGroupIds.has(c.id) || (c.group_id != null && excludedGroupIds.has(c.group_id));
 	// Only a stale incident's *non-operational* components are discounted; a healthy one stays in the rollup.
-	const isDiscounted = (c: SummaryComponent) => inExcludedGroup(c) || (staleCompIds.has(c.id) && c.status !== "operational");
+	const notSelected = (c: SummaryComponent) => onlyComponents != null && !onlyComponents.has(c.name ?? "");
+	const isDiscounted = (c: SummaryComponent) => notSelected(c) || inExcludedGroup(c) || (staleCompIds.has(c.id) && c.status !== "operational");
 	const discountedIds = new Set(all.filter(isDiscounted).map((c) => c.id));
 
 	// Component rollup (skip group containers, which roll up their children).
@@ -243,8 +249,13 @@ async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): 
 	let incidents = allIncidents;
 	const notes: string[] = [];
 
-	if (excludedGroupIds.size > 0 || stale.length > 0) {
-		incidents = allIncidents.filter((i) => !isStale(i) && (!i.components?.length || i.components.some((c) => !discountedIds.has(c.id))));
+	if (onlyComponents || excludedGroupIds.size > 0 || stale.length > 0) {
+		// An incident naming no component is page-wide — unless only selected components count.
+		// With a component allowlist, an incident must name a selected component outright.
+		const countedIds = new Set(all.filter((c) => !isDiscounted(c)).map((c) => c.id));
+		const countsComp = (c: { id?: string }) => (onlyComponents ? countedIds.has(c.id) : !discountedIds.has(c.id));
+		const counts = (i: SummaryIncident) => (i.components?.length ? i.components.some(countsComp) : !onlyComponents);
+		incidents = allIncidents.filter((i) => !isStale(i) && counts(i));
 		indicator = "none";
 		for (const c of components) indicator = worstIndicator(indicator, COMPONENT_INDICATOR[c.status ?? ""] ?? "none");
 		for (const i of incidents) indicator = worstIndicator(indicator, i.impact ?? "none");
@@ -263,7 +274,7 @@ async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): 
 
 	const incident = incidents[0];
 	const details: ServiceDetails = {
-		url: data.page?.url,
+		url: src.statusUrl ?? data.page?.url,
 		updatedAt: data.page?.updated_at,
 		components: total > 0 ? { operational, total, impacted } : undefined,
 		incident: incident
@@ -291,8 +302,8 @@ function nodeText(raw: unknown): string {
 	return String(raw);
 }
 
-/** Extract the most recent entry from a parsed RSS or Atom document. */
-function latestEntry(doc: unknown): FeedEntry | null {
+/** Extract the most recent entry (optionally only those whose title passes `accept`) from a parsed RSS or Atom document. */
+function latestEntry(doc: unknown, accept?: (title: string) => boolean): FeedEntry | null {
 	const root = doc as Record<string, any>;
 	// RSS 2.0: rss > channel > item[]   |   Atom: feed > entry[]
 	const rssItems = root?.rss?.channel?.item;
@@ -316,6 +327,7 @@ function latestEntry(doc: unknown): FeedEntry | null {
 		const linkRaw = item.link;
 		const link = typeof linkRaw === "object" ? (linkRaw?.["@_href"] ?? null) : (linkRaw ?? null);
 		const entry: FeedEntry = { title: title.trim(), description, date, link: link ? String(link) : null };
+		if (accept && !accept(entry.title)) continue;
 		if (!best || (entry.date ?? 0) > (best.date ?? 0)) best = entry;
 	}
 	return best;
@@ -446,8 +458,9 @@ function classifyEntry(title: string, description: string): StatusLevel {
 	const titled = titleStateSignal(title, text);
 	if (titled) return titled;
 
-	// 1. Explicit lifecycle line, e.g. "<b>Status: Monitoring</b>" / "Status: RESOLVED".
-	const state = /status:\s*([a-z]+)/i.exec(description)?.[1]?.toLowerCase();
+	// 1. Explicit lifecycle line, e.g. "<b>Status: Monitoring</b>" / "Status: RESOLVED" /
+	//    "<strong>Status:</strong> resolved" (DeepSeek) — tags stripped so markup can sit in between.
+	const state = /status:\s*([a-z]+)/i.exec(description.replace(/<[^>]+>/g, " "))?.[1]?.toLowerCase();
 	if (state) {
 		if (state === "resolved" || state === "completed" || state === "monitoring") return "up";
 		if (state === "scheduled" || state === "maintenance") return "degraded";
@@ -488,7 +501,10 @@ async function fetchRss(service: Service, url: string, ctx?: FetchCtx): Promise<
 	const res = await fetchWithRetry(url, {}, ctx);
 	if (!res.ok) return result(service, "unknown", `Feed returned HTTP ${res.status}`);
 
-	const entry = latestEntry(xmlParser.parse(await res.text()));
+	// A feed shared by several products tags each entry "[Component] …"; keep only this service's.
+	const tags = rssSource.titleTags?.length ? new Set(rssSource.titleTags.map((t) => t.toLowerCase())) : null;
+	const accept = tags ? (title: string) => tags.has(/^\[([^\]]+)\]/.exec(title)?.[1]?.trim().toLowerCase() ?? "") : undefined;
+	const entry = latestEntry(xmlParser.parse(await res.text()), accept);
 	if (!entry || !entry.title) return result(service, "up", "No recent incidents reported", { url: statusPageUrl });
 
 	const fresh = entry.date == null || Date.now() - entry.date < RSS_FRESH_WINDOW_MS;

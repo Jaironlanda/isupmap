@@ -23,8 +23,13 @@ export type StatusLevel = "up" | "degraded" | "down" | "unknown";
 export type ServiceSource =
 	// excludeGroups: component-group names to ignore; the indicator is then recomputed
 	// from the remaining components + incidents (for per-location noise, e.g. Cloudflare PoPs).
-	| { type: "statuspage"; base: string; excludeGroups?: string[] }
-	| { type: "rss"; url: string; statusUrl?: string } // statusUrl overrides the "Visit status page" link (defaults to feed URL origin)
+	// components: count only these component names (and incidents naming them) — for a service
+	// listed as one component on another provider's page (e.g. Replicate on cloudflarestatus.com).
+	| { type: "statuspage"; base: string; excludeGroups?: string[]; components?: string[]; statusUrl?: string }
+	// statusUrl overrides the "Visit status page" link (defaults to feed URL origin).
+	// titleTags: count only entries whose title starts with "[Tag]" for one of these tags (case-insensitive) —
+	// for a feed shared by several products, e.g. status.x.ai covers both Grok and Cursor.
+	| { type: "rss"; url: string; statusUrl?: string; titleTags?: string[] }
 	| { type: "http"; url: string; statusUrl?: string } // statusUrl overrides when the ping URL isn't the status page
 	| { type: "aws-health"; url: string; statusUrl?: string }; // AWS Health Dashboard current-events JSON
 
@@ -138,13 +143,16 @@ export const SERVICES: Service[] = [
 	// --- AI ---
 	{ id: "openai", name: "OpenAI", category: "AI", weight: 8, source: { type: "rss", url: "https://status.openai.com/feed.rss", statusUrl: "https://status.openai.com" } },
 	{ id: "anthropic", name: "Anthropic", category: "AI", weight: 7, source: { type: "statuspage", base: "https://status.claude.com" } },
-	// status.x.ai's Statuspage JSON sits behind a Cloudflare bot challenge (403),
-	// but its RSS feed is open — so resolve xAI via the feed.
-	{ id: "xai", name: "xAI", category: "AI", weight: 6, source: { type: "rss", url: "https://status.x.ai/feed.xml" } },
+	// status.x.ai is a combined SpaceXAI page for Grok *and* Cursor (status.cursor.com now
+	// redirects there). Its Statuspage JSON sits behind a Cloudflare bot challenge (403), but
+	// feed.xml is open; each entry is titled "[Component] …", so each tile keeps its own tags.
+	{ id: "xai", name: "xAI", category: "AI", weight: 6, source: { type: "rss", url: "https://status.x.ai/feed.xml", statusUrl: "https://status.x.ai", titleTags: ["Global (api.x.ai)", "US (us.api.x.ai)", "grok.com", "Grok Bot", "Grok (iOS)", "Grok (Android)", "Grok (Build)", "Grok in X", "Grok (Office/Workspace Plugins)", "Voice", "Imagine"] } },
 	{ id: "groq", name: "Groq", category: "AI", weight: 5, source: { type: "statuspage", base: "https://groqstatus.com" } },
 	{ id: "elevenlabs", name: "ElevenLabs", category: "AI", weight: 5, source: { type: "statuspage", base: "https://status.elevenlabs.io" } },
 	{ id: "cohere", name: "Cohere", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.cohere.com" } },
-	{ id: "replicate", name: "Replicate", category: "AI", weight: 4, source: { type: "statuspage", base: "https://www.replicatestatus.com" } },
+	// Replicate is now part of Cloudflare: replicatestatus.com redirects to cloudflarestatus.com,
+	// where Replicate is a single component.
+	{ id: "replicate", name: "Replicate", category: "AI", weight: 4, source: { type: "statuspage", base: "https://www.cloudflarestatus.com", components: ["Replicate"], statusUrl: "https://www.cloudflarestatus.com/services?search=replicate" } },
 	{ id: "pinecone", name: "Pinecone", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.pinecone.io" } },
 	{ id: "runway", name: "Runway", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.runwayml.com" } },
 	// Hugging Face uses Betterstack — RSS is the reliable path.
@@ -157,15 +165,16 @@ export const SERVICES: Service[] = [
 	{ id: "stability", name: "Stability AI", category: "AI", weight: 5, source: { type: "statuspage", base: "https://status.stability.ai" } },
 	{ id: "deepgram", name: "Deepgram", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.deepgram.com" } },
 	{ id: "assemblyai", name: "AssemblyAI", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.assemblyai.com" } },
-	// Cursor publishes an RSS incident history feed.
-	{ id: "cursor", name: "Cursor", category: "AI", weight: 6, source: { type: "rss", url: "https://status.cursor.com/history.rss" } },
+	// Cursor's status moved onto the combined status.x.ai page (see xAI above).
+	{ id: "cursor", name: "Cursor", category: "AI", weight: 6, source: { type: "rss", url: "https://status.x.ai/feed.xml", statusUrl: "https://status.x.ai", titleTags: ["cursor.com", "Cursor IDE (Desktop)", "Cursor IDE (iOS)", "CLI", "Cloud Agents", "Automations", "Review Agents", "Third-party models", "Enterprise Dashboard", "Origin"] } },
 	{ id: "cerebras", name: "Cerebras", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.cerebras.ai" } },
 	// Fireworks AI uses a custom status page — RSS is the reliable path.
 	{ id: "fireworksai", name: "Fireworks AI", category: "AI", weight: 4, source: { type: "rss", url: "https://status.fireworks.ai/feed.rss", statusUrl: "https://status.fireworks.ai" } },
-	// DeepSeek's status feed is currently unavailable — fall back to an HTTP ping of the status page.
-	{ id: "deepseek", name: "DeepSeek", category: "AI", weight: 7, source: { type: "http", url: "https://status.deepseek.com", statusUrl: "https://status.deepseek.com" } },
-	// Mistral AI uses a custom Checkly-powered status page (Nuxt app) with no open machine-readable feed — HTTP ping fallback.
-	{ id: "mistral", name: "Mistral AI", category: "AI", weight: 6, source: { type: "http", url: "https://status.mistral.ai", statusUrl: "https://status.mistral.ai" } },
+	// DeepSeek's status page (Flashduty) publishes an RSS incident feed.
+	{ id: "deepseek", name: "DeepSeek", category: "AI", weight: 7, source: { type: "rss", url: "https://status.deepseek.com/history.rss", statusUrl: "https://status.deepseek.com" } },
+	// Mistral AI's status page serves a Statuspage-compatible summary.json (its HTML sits behind a
+	// Cloudflare challenge, so the old HTTP ping always read the 403 as "up").
+	{ id: "mistral", name: "Mistral AI", category: "AI", weight: 6, source: { type: "statuspage", base: "https://status.mistral.ai" } },
 
 	// --- Payments ---
 	{ id: "stripe", name: "Stripe", category: "Payments", weight: 7, source: { type: "statuspage", base: "https://www.stripestatus.com" } },
