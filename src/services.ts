@@ -151,8 +151,9 @@ export const SERVICES: Service[] = [
 	{ id: "huggingface", name: "Hugging Face", category: "AI", weight: 7, source: { type: "rss", url: "https://status.huggingface.co/feed.rss" } },
 	// Together AI uses Betterstack — RSS is the reliable path.
 	{ id: "togetherai", name: "Together AI", category: "AI", weight: 5, source: { type: "rss", url: "https://status.together.ai/feed.rss" } },
-	// Perplexity uses Instatus — RSS feed confirmed working.
-	{ id: "perplexity", name: "Perplexity", category: "AI", weight: 6, source: { type: "rss", url: "https://status.perplexity.com/default/history.rss" } },
+	// Perplexity moved from Instatus to incident.io (the old /default/history.rss now 404s),
+	// which serves a Statuspage-compatible summary.json.
+	{ id: "perplexity", name: "Perplexity", category: "AI", weight: 6, source: { type: "statuspage", base: "https://status.perplexity.com" } },
 	{ id: "stability", name: "Stability AI", category: "AI", weight: 5, source: { type: "statuspage", base: "https://status.stability.ai" } },
 	{ id: "deepgram", name: "Deepgram", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.deepgram.com" } },
 	{ id: "assemblyai", name: "AssemblyAI", category: "AI", weight: 4, source: { type: "statuspage", base: "https://status.assemblyai.com" } },
