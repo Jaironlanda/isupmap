@@ -185,6 +185,116 @@ describe("statuspage excludeGroups (Cloudflare-style per-location noise)", () =>
 	});
 });
 
+describe("statuspage stale incidents", () => {
+	const base = "https://status.elastic.co";
+	const resolve = () => resolveStatus(svc({ type: "statuspage", base }));
+	const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+
+	// 20 operational components + 7 me-south-1 components in major_outage, mirroring Elastic.
+	function elasticSummary(incidents: unknown[], regionStatus = "major_outage") {
+		const ok = Array.from({ length: 20 }, (_, i) => ({ id: `ok-${i}`, name: `Elasticsearch connectivity: AWS region-${i}`, status: "operational" }));
+		const region = Array.from({ length: 7 }, (_, i) => ({ id: `mes-${i}`, name: `Component ${i}: AWS me-south-1`, status: regionStatus }));
+		return JSON.stringify({
+			page: { id: "abcdef123456", url: base, updated_at: daysAgo(0) },
+			status: { indicator: "major", description: "Partial System Outage" },
+			components: [...ok, ...region],
+			incidents,
+		});
+	}
+	const bahrain = (updatedDaysAgo: number) => ({
+		name: "Connectivity disruption for AWS Bahrain (me-south-1)",
+		impact: "major",
+		updated_at: daysAgo(updatedDaysAgo),
+		components: Array.from({ length: 7 }, (_, i) => ({ id: `mes-${i}` })),
+	});
+
+	it("drops an incident not updated in 14+ days, and the components it covers", async () => {
+		fetchSpy.mockResolvedValue(reply(elasticSummary([bahrain(57)])));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.description).toBe("All Systems Operational");
+		expect(r.details?.incident).toBeUndefined();
+		expect(r.details?.components).toEqual({ operational: 20, total: 20, impacted: [] });
+		expect(r.details?.note).toBe("Stale incident not counted (no update in 57 days): Connectivity disruption for AWS Bahrain (me-south-1)");
+	});
+
+	it("keeps a stale incident's operational components in the rollup (MongoDB-style)", async () => {
+		fetchSpy.mockResolvedValue(reply(elasticSummary([bahrain(74)], "operational")));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.details?.components).toEqual({ operational: 27, total: 27, impacted: [] });
+		expect(r.details?.note).toContain("no update in 74 days");
+	});
+
+	it("keeps an incident updated within 14 days (weekly cadence, like Snowflake's)", async () => {
+		fetchSpy.mockResolvedValue(reply(elasticSummary([bahrain(7)])));
+		const r = await resolve();
+		// Upstream indicator is trusted as before: a localized major outage → degraded.
+		expect(r.status).toBe("degraded");
+		expect(r.details?.incident?.name).toBe("Connectivity disruption for AWS Bahrain (me-south-1)");
+		expect(r.details?.note).toBeUndefined();
+	});
+
+	it("still counts a live incident alongside a stale one", async () => {
+		const live = { name: "Kibana login errors", impact: "minor", updated_at: daysAgo(0), components: [{ id: "ok-0" }] };
+		const body = JSON.parse(elasticSummary([bahrain(57), live]));
+		body.components[0].status = "degraded_performance";
+		fetchSpy.mockResolvedValue(reply(JSON.stringify(body)));
+		const r = await resolve();
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Kibana login errors");
+		expect(r.details?.note).toContain("Stale incident not counted");
+	});
+
+	it("keeps a component a live incident also covers, even if a stale one names it", async () => {
+		const live = { name: "me-south-1 relapse", impact: "major", updated_at: daysAgo(0), components: [{ id: "mes-0" }] };
+		fetchSpy.mockResolvedValue(reply(elasticSummary([bahrain(57), live])));
+		const r = await resolve();
+		expect(r.details?.components?.total).toBe(21);
+		expect(r.details?.components?.impacted).toEqual(["Component 0: AWS me-south-1"]);
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("me-south-1 relapse");
+	});
+});
+
+describe("statuspage on incident.io (truncated summary components)", () => {
+	const base = "https://status.supabase.com";
+	const ULID = "01KJZVWMNKKQM1MY9H5QWY34VG";
+	const regions = (n: number, bad: Record<number, string> = {}) => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, name: `region-${i}`, status: bad[i] ?? "operational" }));
+	const summary = (pageId: string, indicator = "none", components = regions(1)) =>
+		JSON.stringify({ page: { id: pageId, url: `${base}/`, updated_at: "2026-11-17T06:33:11Z" }, status: { indicator, description: "desc" }, components, incidents: [] });
+
+	it("reads the full list from components.json when the page id is an incident.io ULID", async () => {
+		fetchSpy.mockResolvedValueOnce(reply(summary(ULID))).mockResolvedValueOnce(reply(JSON.stringify({ components: regions(189) })));
+		const r = await resolveStatus(svc({ type: "statuspage", base }));
+		expect(fetchSpy.mock.calls[1][0]).toBe(`${base}/api/v2/components.json`);
+		expect(r.status).toBe("up");
+		expect(r.details?.components).toEqual({ operational: 189, total: 189, impacted: [] });
+	});
+
+	it("uses the full list for breadth: a 1-region major outage is degraded, not down", async () => {
+		// With only the summary's 1 component, total < 4 would trust the indicator → down.
+		fetchSpy.mockResolvedValueOnce(reply(summary(ULID, "major"))).mockResolvedValueOnce(reply(JSON.stringify({ components: regions(189, { 5: "major_outage" }) })));
+		const r = await resolveStatus(svc({ type: "statuspage", base }));
+		expect(r.status).toBe("degraded");
+		expect(r.details?.components?.impacted).toEqual(["region-5"]);
+	});
+
+	it("falls back to the summary's components if components.json fails", async () => {
+		fetchSpy.mockResolvedValueOnce(reply(summary(ULID))).mockResolvedValueOnce(reply("nope", 404));
+		const r = await resolveStatus(svc({ type: "statuspage", base }));
+		expect(r.status).toBe("up");
+		expect(r.details?.components?.total).toBe(1);
+	});
+
+	it("does not fetch components.json for an Atlassian page (12-char id)", async () => {
+		fetchSpy.mockResolvedValue(reply(summary("kctbh9vrtdwd", "none", regions(12))));
+		const r = await resolveStatus(svc({ type: "statuspage", base: "https://www.githubstatus.com" }));
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+		expect(r.details?.components?.total).toBe(12);
+	});
+});
+
 describe("cerebras (statuspage)", () => {
 	const base = "https://status.cerebras.ai";
 	const cerebras: Service = { id: "cerebras", name: "Cerebras", category: "AI", weight: 4, source: { type: "statuspage", base } };
@@ -212,7 +322,8 @@ describe("cerebras (statuspage)", () => {
 				name: "API Inference Outage",
 				impact: "critical",
 				shortlink: "https://status.cerebras.ai/incidents/abc123",
-				updated_at: "2026-06-10T12:00:00Z",
+				// Must be recent: incidents not updated in 14+ days are treated as stale.
+				updated_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
 			},
 		];
 		fetchSpy.mockResolvedValue(reply(summaryBody("major", incidents)));

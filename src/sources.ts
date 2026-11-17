@@ -108,7 +108,7 @@ interface SummaryIncident {
 }
 
 interface StatuspageSummary {
-	page?: { url?: string; updated_at?: string };
+	page?: { id?: string; url?: string; updated_at?: string };
 	status?: { indicator?: string; description?: string };
 	components?: SummaryComponent[];
 	incidents?: SummaryIncident[];
@@ -157,34 +157,82 @@ const COMPONENT_INDICATOR: Record<string, string> = {
 const worstIndicator = (a: string, b: string): string => ((INDICATOR_RANK[b] ?? 0) > (INDICATOR_RANK[a] ?? 0) ? b : a);
 
 /**
+ * An open incident the provider hasn't updated in this long is treated as
+ * stale. Live incidents get updates at least weekly (Snowflake's 11-week
+ * capacity incident was updated every ~7 days); a regional event left open for
+ * months without updates — e.g. Elastic's AWS me-south-1 incident, open since
+ * 2026-03 and last touched 2026-09-21 — would otherwise pin the tile forever.
+ * Mirrors the AWS source, which ignores long-running events without updates.
+ */
+const STALE_INCIDENT_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * incident.io hosts a Statuspage-compatible API, but its `summary.json` carries
+ * only a subset of the components (Supabase: 1 of 189; most pages: 25) while
+ * `components.json` has them all. incident.io page ids are 26-char ULIDs;
+ * Atlassian's are 12-char, so the id tells the two apart.
+ */
+const INCIDENT_IO_PAGE_ID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/** Best-effort full component list for an incident.io page; null keeps the summary's. */
+async function fetchAllComponents(base: string, ctx?: FetchCtx): Promise<SummaryComponent[] | null> {
+	try {
+		const res = await fetchWithRetry(`${base}/api/v2/components.json`, {}, ctx);
+		if (!res.ok) return null;
+		const list = ((await res.json()) as { components?: SummaryComponent[] }).components;
+		return Array.isArray(list) ? list : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Atlassian Statuspage. We read `summary.json` (a superset of `status.json`)
  * so the hover card can show component rollups and active incidents.
  *
- * With `excludeGroups`, components in those groups are dropped and the
- * indicator is recomputed from what's left (worst remaining component status,
- * plus the impact of any active incident that touches a remaining component or
- * names none). This is for pages whose top-level indicator is dominated by
- * per-location noise — e.g. Cloudflare lists ~345 datacenters, dozens of which
- * are always "Re-routed" or in maintenance, pinning the indicator at `minor`
- * even when every product is operational.
+ * Normally the upstream indicator is trusted. It is instead **recomputed** —
+ * worst status of the counted components, plus the impact of every counted
+ * incident — when something must be discounted:
+ *   - `excludeGroups`: components in those groups are dropped. For pages whose
+ *     indicator is dominated by per-location noise — Cloudflare lists ~345
+ *     datacenters, dozens always "Re-routed" or in maintenance.
+ *   - Stale incidents (no update in {@link STALE_INCIDENT_MS}) are dropped along
+ *     with the components they cover, and listed in the note.
+ * An incident counts unless every component it names is discounted.
  */
 async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): Promise<ServiceStatus> {
-	const res = await fetchWithRetry(`${base.replace(/\/$/, "")}/api/v2/summary.json`, {}, ctx);
+	const root = base.replace(/\/$/, "");
+	const res = await fetchWithRetry(`${root}/api/v2/summary.json`, {}, ctx);
 	if (!res.ok) return result(service, "unknown", `Status API returned HTTP ${res.status}`);
 
 	const data = (await res.json()) as StatuspageSummary;
 	const src = service.source as Extract<ServiceSource, { type: "statuspage" }>;
 	const excludeGroups = new Set(src.excludeGroups ?? []);
-	const all = data.components ?? [];
+	let all = data.components ?? [];
+	if (INCIDENT_IO_PAGE_ID_RE.test(data.page?.id ?? "")) {
+		const full = await fetchAllComponents(root, ctx);
+		if (full && full.length > all.length) all = full;
+	}
+
+	// Stale incidents, and the components only they cover (a component also named
+	// by a live incident stays counted).
+	const now = Date.now();
+	const isStale = (i: SummaryIncident) => i.updated_at != null && now - Date.parse(i.updated_at) >= STALE_INCIDENT_MS;
+	const allIncidents = data.incidents ?? [];
+	const stale = allIncidents.filter(isStale);
+	const liveCompIds = new Set(allIncidents.filter((i) => !isStale(i)).flatMap((i) => (i.components ?? []).map((c) => c.id)));
+	const staleCompIds = new Set(stale.flatMap((i) => (i.components ?? []).map((c) => c.id)).filter((id) => !liveCompIds.has(id)));
 
 	// Group containers whose name is excluded, and every component inside them.
 	const excludedGroupIds = new Set(all.filter((c) => c.group === true && excludeGroups.has(c.name ?? "")).map((c) => c.id));
-	const isExcluded = (c: SummaryComponent) => excludedGroupIds.has(c.id) || (c.group_id != null && excludedGroupIds.has(c.group_id));
-	const excludedIds = new Set(all.filter(isExcluded).map((c) => c.id));
+	const inExcludedGroup = (c: SummaryComponent) => excludedGroupIds.has(c.id) || (c.group_id != null && excludedGroupIds.has(c.group_id));
+	// Only a stale incident's *non-operational* components are discounted; a healthy one stays in the rollup.
+	const isDiscounted = (c: SummaryComponent) => inExcludedGroup(c) || (staleCompIds.has(c.id) && c.status !== "operational");
+	const discountedIds = new Set(all.filter(isDiscounted).map((c) => c.id));
 
 	// Component rollup (skip group containers, which roll up their children).
 	const leaves = all.filter((c) => c.group !== true);
-	const components = leaves.filter((c) => !isExcluded(c));
+	const components = leaves.filter((c) => !isDiscounted(c));
 	const total = components.length;
 	const impacted = components.filter((c) => c.status && c.status !== "operational").map((c) => c.name ?? "Unknown");
 	const operational = total - impacted.length;
@@ -192,20 +240,24 @@ async function fetchStatuspage(service: Service, base: string, ctx?: FetchCtx): 
 
 	let indicator = data.status?.indicator ?? "none";
 	let description = data.status?.description ?? "";
-	let incidents = data.incidents ?? [];
-	let note: string | undefined;
+	let incidents = allIncidents;
+	const notes: string[] = [];
 
-	if (excludedGroupIds.size > 0) {
-		// An incident counts unless every component it names is excluded.
-		incidents = incidents.filter((i) => !i.components?.length || i.components.some((c) => !excludedIds.has(c.id)));
+	if (excludedGroupIds.size > 0 || stale.length > 0) {
+		incidents = allIncidents.filter((i) => !isStale(i) && (!i.components?.length || i.components.some((c) => !discountedIds.has(c.id))));
 		indicator = "none";
 		for (const c of components) indicator = worstIndicator(indicator, COMPONENT_INDICATOR[c.status ?? ""] ?? "none");
 		for (const i of incidents) indicator = worstIndicator(indicator, i.impact ?? "none");
-		// The upstream description reflects the excluded noise too, so derive our own.
+		// The upstream description reflects the discounted signal too, so derive our own.
 		description = indicator === "none" ? "All Systems Operational" : (incidents[0]?.name ?? (impacted.length ? `Impacted: ${impacted.join(", ")}` : ""));
-		const ignored = leaves.filter((c) => isExcluded(c) && c.status && c.status !== "operational").length;
-		if (ignored > 0) note = `${ignored} component${ignored === 1 ? "" : "s"} in ignored groups not operational (not counted)`;
+		const ignored = leaves.filter((c) => inExcludedGroup(c) && c.status && c.status !== "operational").length;
+		if (ignored > 0) notes.push(`${ignored} component${ignored === 1 ? "" : "s"} in ignored groups not operational (not counted)`);
+		for (const i of stale) {
+			const days = Math.floor((now - Date.parse(i.updated_at as string)) / 86_400_000);
+			notes.push(`Stale incident not counted (no update in ${days} days): ${i.name ?? "Unnamed incident"}`);
+		}
 	}
+	const note = notes.length ? notes.join("; ") : undefined;
 
 	const status = statuspageStatus(indicator, total, majorOutages);
 
