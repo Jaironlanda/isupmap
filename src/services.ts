@@ -9,6 +9,9 @@
  *                   from the most recent entry.
  *   - `http`:       A plain HTTP request to a URL; status derives from the
  *                   response code. Last-resort for services with no status feed.
+ *   - `aws-health`: The AWS Health Dashboard's public current-events JSON
+ *                   (the legacy status.aws.amazon.com RSS stopped receiving
+ *                   new events in Sep 2026).
  *
  * `weight` is a relative prominence used to size tiles in the treemap (the
  * stock-map look) — bigger services get bigger tiles. It carries no meaning
@@ -20,7 +23,8 @@ export type StatusLevel = "up" | "degraded" | "down" | "unknown";
 export type ServiceSource =
 	| { type: "statuspage"; base: string }
 	| { type: "rss"; url: string; statusUrl?: string } // statusUrl overrides the "Visit status page" link (defaults to feed URL origin)
-	| { type: "http"; url: string; statusUrl?: string }; // statusUrl overrides when the ping URL isn't the status page
+	| { type: "http"; url: string; statusUrl?: string } // statusUrl overrides when the ping URL isn't the status page
+	| { type: "aws-health"; url: string; statusUrl?: string }; // AWS Health Dashboard current-events JSON
 
 export interface Service {
 	id: string;
@@ -79,13 +83,15 @@ export const SERVICES: Service[] = [
 	{ id: "circleci", name: "CircleCI", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.circleci.com" } },
 	{ id: "linode", name: "Linode", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.linode.com" } },
 	{ id: "render", name: "Render", category: "Developer & Cloud", weight: 3, source: { type: "statuspage", base: "https://status.render.com" } },
-	// AWS publishes an RSS feed rather than a Statuspage site — exercises the RSS path.
-	{ id: "aws", name: "AWS", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://status.aws.amazon.com/rss/all.rss" } },
+	// AWS: the Health Dashboard's current-events JSON. The legacy status.aws.amazon.com
+	// RSS stopped receiving new events after 2026-09-15 (six later incidents never
+	// appeared in it), so it silently read as "up" through real outages.
+	{ id: "aws", name: "AWS", category: "Developer & Cloud", weight: 10, source: { type: "aws-health", url: "https://health.aws.amazon.com/public/currentevents", statusUrl: "https://health.aws.amazon.com/health/status" } },
 	// Google Cloud publishes an Atom incident feed (not an Atlassian Statuspage).
 	{ id: "gcp", name: "Google Cloud", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://status.cloud.google.com/en/feed.atom", statusUrl: "https://status.cloud.google.com/" } },
-	// Azure's global status feed no longer publishes machine-readable incident
-	// items (empty channel), so its status can't be resolved reliably.
-	{ id: "azure", name: "Microsoft Azure", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://azure.status.microsoft/en-us/status/feed/", statusUrl: "https://azure.status.microsoft/en-us/status" }, disabled: "Azure's status feed no longer publishes machine-readable incidents, so its status can't be resolved." },
+	// Azure's feed lists only *active* incidents, so an empty channel is the normal
+	// healthy state (it matches the page's "There are currently no active events").
+	{ id: "azure", name: "Microsoft Azure", category: "Developer & Cloud", weight: 10, source: { type: "rss", url: "https://azure.status.microsoft/en-us/status/feed/", statusUrl: "https://azure.status.microsoft/en-us/status" } },
 	{ id: "supabase", name: "Supabase", category: "Developer & Cloud", weight: 6, source: { type: "statuspage", base: "https://status.supabase.com" } },
 	{ id: "flyio", name: "Fly.io", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://status.flyio.net" } },
 	// Railway moved to a JS-rendered status page (status.railway.com) with no

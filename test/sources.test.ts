@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveStatus } from "../src/sources";
+import { decodeJsonBytes, resolveStatus } from "../src/sources";
 import type { Service, ServiceSource } from "../src/services";
 
 // resolveStatus only touches the network via the global `fetch`; stub it so
@@ -303,6 +303,131 @@ describe("cloud providers (GCP & Azure RSS feeds)", () => {
 		const item = `<item><title>Service issue - Virtual Machines</title><description><![CDATA[Investigating - We are aware of a major outage affecting Virtual Machines.]]></description><pubDate>${now()}</pubDate><link>https://azure.status.microsoft/incident/1</link></item>`;
 		fetchSpy.mockResolvedValue(reply(`<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>Azure Status</title>${item}</channel></rss>`));
 		expect((await resolveAzure()).status).toBe("down");
+	});
+});
+
+describe("AWS Health current events (aws-health)", () => {
+	const url = "https://health.aws.amazon.com/public/currentevents";
+	const statusUrl = "https://health.aws.amazon.com/health/status";
+	const resolve = () => resolveStatus(svc({ type: "aws-health", url, statusUrl }));
+	const secsAgo = (hours: number) => String(Math.floor((Date.now() - hours * 3_600_000) / 1000));
+
+	/** The real endpoint serves UTF-16 big-endian with a BOM. */
+	function utf16be(text: string): Uint8Array {
+		const out = new Uint8Array(2 + text.length * 2);
+		out[0] = 0xfe;
+		out[1] = 0xff;
+		for (let i = 0; i < text.length; i++) {
+			const u = text.charCodeAt(i);
+			out[2 + i * 2] = u >> 8;
+			out[3 + i * 2] = u & 0xff;
+		}
+		return out;
+	}
+	function event(o: { region: string; service?: string; sev: number; hoursAgo: number; logStatus?: number; summary?: string }) {
+		const ts = secsAgo(o.hoursAgo);
+		return {
+			date: secsAgo(o.hoursAgo + 1),
+			arn: `arn:aws:health:${o.region}::event/X`,
+			region_name: o.region,
+			status: String(o.sev),
+			service_name: o.service ?? "Amazon EC2",
+			summary: "Region event",
+			event_log: [
+				{ summary: "Investigating", message: "We are investigating.", status: 1, timestamp: Number(secsAgo(o.hoursAgo + 1)) },
+				{ summary: o.summary ?? "Increased Error Rates", message: "Update.", status: o.logStatus ?? o.sev, timestamp: Number(ts) },
+			],
+		};
+	}
+	const respond = (events: unknown[]) => fetchSpy.mockResolvedValue(new Response(utf16be(JSON.stringify(events)), { status: 200 }));
+
+	it("decodes the UTF-16 body and reads an empty event list as up", async () => {
+		respond([]);
+		const r = await resolve();
+		expect(fetchSpy.mock.calls[0][0]).toBe(url);
+		expect(r.status).toBe("up");
+		expect(r.details?.url).toBe(statusUrl);
+	});
+
+	it("ignores long-running events with no recent updates, but notes them", async () => {
+		// Mirrors the live state: two me-* disruptions open since March, last updated months ago.
+		respond([event({ region: "UAE", service: "Multiple services", sev: 3, hoursAgo: 24 * 60 }), event({ region: "Bahrain", service: "Multiple services", sev: 3, hoursAgo: 24 * 60 })]);
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.details?.note).toContain("2 long-running events");
+		expect(r.details?.note).toContain("UAE, Bahrain");
+		expect(r.details?.incident).toBeUndefined();
+	});
+
+	it("skips an event whose latest log entry is the resolution marker", async () => {
+		respond([event({ region: "N. Virginia", sev: 1, hoursAgo: 1, logStatus: 0, summary: "[RESOLVED] Increased Error Rates" })]);
+		expect((await resolve()).status).toBe("up");
+	});
+
+	it("reads a fresh single-region informational event as degraded", async () => {
+		respond([event({ region: "N. Virginia", service: "AWS IAM Identity Center", sev: 1, hoursAgo: 1, summary: "Increased Connectivity issues" })]);
+		const r = await resolve();
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("AWS IAM Identity Center (N. Virginia): Increased Connectivity issues");
+		expect(r.details?.incident?.name).toBe(r.description);
+	});
+
+	it("tempers a single-region, single-service disruption to degraded", async () => {
+		respond([event({ region: "Oregon", service: "Amazon EC2", sev: 3, hoursAgo: 1 })]);
+		expect((await resolve()).status).toBe("degraded");
+	});
+
+	it("reads a fresh 'Multiple services' disruption as down", async () => {
+		respond([event({ region: "N. Virginia", service: "Multiple services", sev: 3, hoursAgo: 1 })]);
+		expect((await resolve()).status).toBe("down");
+	});
+
+	it("reads disruptions spanning two regions as down", async () => {
+		respond([event({ region: "Oregon", sev: 3, hoursAgo: 1 }), event({ region: "Tokyo", sev: 3, hoursAgo: 2 })]);
+		expect((await resolve()).status).toBe("down");
+	});
+
+	it("surfaces the most severe active event and counts the rest", async () => {
+		respond([
+			event({ region: "Tokyo", service: "Amazon S3", sev: 1, hoursAgo: 0.5 }),
+			event({ region: "Oregon", service: "Amazon EC2", sev: 2, hoursAgo: 3, summary: "Elevated Launch Failures" }),
+			event({ region: "UAE", service: "Multiple services", sev: 3, hoursAgo: 24 * 60 }),
+		]);
+		const r = await resolve();
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Amazon EC2 (Oregon): Elevated Launch Failures");
+		expect(r.details?.note).toBe("2 active events; 1 long-running event with no recent updates (UAE)");
+	});
+
+	it("returns unknown on a non-OK response", async () => {
+		fetchSpy.mockResolvedValue(new Response("nope", { status: 404 }));
+		const r = await resolve();
+		expect(r.status).toBe("unknown");
+		expect(r.description).toContain("HTTP 404");
+	});
+});
+
+describe("decodeJsonBytes", () => {
+	const enc = (s: string, be: boolean, bom = true) => {
+		const out: number[] = bom ? (be ? [0xfe, 0xff] : [0xff, 0xfe]) : [];
+		for (let i = 0; i < s.length; i++) {
+			const u = s.charCodeAt(i);
+			out.push(...(be ? [u >> 8, u & 0xff] : [u & 0xff, u >> 8]));
+		}
+		return new Uint8Array(out).buffer;
+	};
+	const sample = '[{"region":"São Paulo","note":"🚀"}]'; // non-ASCII + a surrogate pair
+
+	it("decodes UTF-8", () => expect(decodeJsonBytes(new TextEncoder().encode(sample).buffer as ArrayBuffer)).toBe(sample));
+	it("decodes UTF-16 BE with a BOM", () => expect(decodeJsonBytes(enc(sample, true))).toBe(sample));
+	it("decodes UTF-16 LE with a BOM", () => expect(decodeJsonBytes(enc(sample, false))).toBe(sample));
+	it("detects BOM-less UTF-16 from the NUL byte position", () => {
+		expect(decodeJsonBytes(enc(sample, true, false))).toBe(sample);
+		expect(decodeJsonBytes(enc(sample, false, false))).toBe(sample);
+	});
+	it("decodes a body larger than one decode chunk", () => {
+		const big = JSON.stringify(Array.from({ length: 3000 }, (_, i) => ({ i, msg: "Increased Error Rates" })));
+		expect(decodeJsonBytes(enc(big, true))).toBe(big);
 	});
 });
 
