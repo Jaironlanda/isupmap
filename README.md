@@ -151,8 +151,8 @@ Every service is normalized to one of: `up` · `degraded` · `down` · `unknown`
 
 | Source type   | How status is derived |
 |---------------|-----------------------|
-| **Statuspage** | Reads `{base}/api/v2/summary.json` (Atlassian). `status.indicator` maps: `none`→`up`, `minor`/`maintenance`→`degraded`. A `major`/`critical` indicator is **tempered by breadth** — since the indicator reflects peak component severity, not how much is affected — so it only reads `down` when the major outage is broad (≥50% of components, or too few components to judge); a localized one (e.g. a single region) → `degraded`. The summary also yields component rollups and active incidents for the detail view. |
-| **RSS / Atom** | Parses the latest feed entry (via `fast-xml-parser`). Entries older than 48h are treated as resolved (`up`). A fresh entry mentioning *resolved/restored/operational* → `up`; *outage/down/major/critical* → `down`; anything else fresh → `degraded`. Heuristic. |
+| **Statuspage** | Reads `{base}/api/v2/summary.json` (Atlassian). `status.indicator` maps: `none`→`up`, `minor`/`maintenance`→`degraded`. A `major`/`critical` indicator is **tempered by breadth** — since the indicator reflects peak component severity, not how much is affected — so it only reads `down` when the major outage is broad (≥50% of components, or too few components to judge); a localized one (e.g. a single region) → `degraded`. The summary also yields component rollups and active incidents for the detail view. A source can set `excludeGroups` to drop per-location component groups whose noise pins the indicator (Cloudflare's ~345 datacenters, dozens always "Re-routed" or in maintenance); the status is then recomputed from the remaining components and the incidents that touch them. |
+| **RSS / Atom** | Parses the latest feed entry (via `fast-xml-parser`). Entries older than 48h are treated as resolved (`up`). A fresh entry mentioning *resolved/restored/operational* → `up`; *outage/down/major/critical* → `down`; anything else fresh → `degraded`. An explicit title state wins over the body: a `…: Resolved` suffix (Appwrite) or a `RESOLVED: …` prefix (GCP/Firebase, whose resolved bodies are incident reports). Heuristic. |
 | **HTTP ping**  | A plain `GET`. `2xx`/`3xx` → `up`; other response → `degraded`; network error or timeout → `down`. |
 | **AWS Health** | Reads the AWS Health Dashboard's public current-events JSON (served as UTF-16). An event is *active* when its latest update isn't the resolution marker and is under 48h old; long-running events with no recent updates are listed in the note but don't color the tile. Active → `degraded`; a disruption that is global, hits "Multiple services", or spans 2+ regions → `down`. |
 | *(any)*        | A failed fetch or timeout → `unknown` (treated as "no data" — never opens an incident or counts as downtime). |
@@ -183,7 +183,7 @@ permanently `unknown` (grey), hidden from the heatmap, and appear locked in the
 | Service | Category | Source | Endpoint / base |
 |---------|----------|--------|-----------------|
 | GitHub | Developer & Cloud | Statuspage | `https://www.githubstatus.com` |
-| Cloudflare | Developer & Cloud | Statuspage | `https://www.cloudflarestatus.com` |
+| Cloudflare | Developer & Cloud | Statuspage (regional PoP groups excluded) | `https://www.cloudflarestatus.com` |
 | npm | Developer & Cloud | Statuspage | `https://status.npmjs.org` |
 | DigitalOcean | Developer & Cloud | Statuspage | `https://status.digitalocean.com` |
 | Vercel | Developer & Cloud | Statuspage | `https://www.vercel-status.com` |

@@ -98,6 +98,93 @@ describe("statuspage", () => {
 	});
 });
 
+describe("statuspage excludeGroups (Cloudflare-style per-location noise)", () => {
+	const base = "https://www.cloudflarestatus.com";
+	const resolve = () => resolveStatus(svc({ type: "statuspage", base, excludeGroups: ["Asia", "Europe"] }));
+
+	// Two regional groups of PoPs plus a products group, mirroring cloudflarestatus.com.
+	function cfSummary(o: { indicator: string; pops?: Record<string, string>; products?: Record<string, string>; incidents?: unknown[] }) {
+		const groups = [
+			{ id: "g-asia", name: "Asia", group: true, status: "operational" },
+			{ id: "g-eu", name: "Europe", group: true, status: "operational" },
+			{ id: "g-svc", name: "Cloudflare Sites and Services", group: true, status: "operational" },
+		];
+		const pops = Object.entries(o.pops ?? { "Hong Kong - (HKG)": "operational", "London - (LHR)": "operational" }).map(([name, status], i) => ({
+			id: `pop-${i}`,
+			name,
+			status,
+			group_id: i % 2 ? "g-eu" : "g-asia",
+		}));
+		const products = Object.entries(o.products ?? { CDN: "operational", DNS: "operational", Workers: "operational", R2: "operational" }).map(([name, status]) => ({
+			id: `svc-${name}`,
+			name,
+			status,
+			group_id: "g-svc",
+		}));
+		return JSON.stringify({
+			page: { url: base, updated_at: "2026-11-17T00:00:00Z" },
+			status: { indicator: o.indicator, description: "Partially Degraded Service" },
+			components: [...groups, ...pops, ...products],
+			incidents: o.incidents ?? [],
+		});
+	}
+
+	it("reads up when only excluded PoPs are re-routed / in maintenance (indicator ignored)", async () => {
+		fetchSpy.mockResolvedValue(reply(cfSummary({ indicator: "minor", pops: { "Hong Kong - (HKG)": "under_maintenance", "London - (LHR)": "partial_outage", "Dhaka - (DAC)": "partial_outage" } })));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.description).toBe("All Systems Operational");
+		// Rollup counts products only; the ignored noise is surfaced in the note.
+		expect(r.details?.components).toEqual({ operational: 4, total: 4, impacted: [] });
+		expect(r.details?.note).toBe("3 components in ignored groups not operational (not counted)");
+	});
+
+	it("still reads degraded for a product incident (e.g. the Workers event-subscription incident)", async () => {
+		fetchSpy.mockResolvedValue(
+			reply(
+				cfSummary({
+					indicator: "minor",
+					pops: { "Hong Kong - (HKG)": "partial_outage", "London - (LHR)": "operational" },
+					products: { CDN: "operational", DNS: "operational", Workers: "degraded_performance", Queues: "degraded_performance" },
+					incidents: [{ name: "Changes to Cloudflare Workers are not producing Event Subscription events", impact: "minor", components: [{ id: "svc-Workers" }, { id: "svc-Queues" }] }],
+				}),
+			),
+		);
+		const r = await resolve();
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Changes to Cloudflare Workers are not producing Event Subscription events");
+		expect(r.details?.incident?.name).toBe(r.description);
+	});
+
+	it("ignores an incident that only touches excluded PoPs", async () => {
+		fetchSpy.mockResolvedValue(reply(cfSummary({ indicator: "major", pops: { "Hong Kong - (HKG)": "major_outage", "London - (LHR)": "operational" }, incidents: [{ name: "HKG connectivity", impact: "major", components: [{ id: "pop-0" }] }] })));
+		const r = await resolve();
+		expect(r.status).toBe("up");
+		expect(r.details?.incident).toBeUndefined();
+	});
+
+	it("counts an incident that names no components", async () => {
+		fetchSpy.mockResolvedValue(reply(cfSummary({ indicator: "minor", incidents: [{ name: "Elevated API errors", impact: "minor", components: [] }] })));
+		const r = await resolve();
+		expect(r.status).toBe("degraded");
+		expect(r.description).toBe("Elevated API errors");
+	});
+
+	it("reads down for a broad product major outage", async () => {
+		fetchSpy.mockResolvedValue(reply(cfSummary({ indicator: "critical", products: { CDN: "major_outage", DNS: "major_outage", Workers: "major_outage", R2: "operational" } })));
+		const r = await resolve();
+		expect(r.status).toBe("down");
+		expect(r.description).toBe("Impacted: CDN, DNS, Workers");
+	});
+
+	it("leaves the upstream indicator in charge when excludeGroups is unset", async () => {
+		fetchSpy.mockResolvedValue(reply(cfSummary({ indicator: "minor", pops: { "Hong Kong - (HKG)": "partial_outage", "London - (LHR)": "operational" } })));
+		const r = await resolveStatus(svc({ type: "statuspage", base }));
+		expect(r.status).toBe("degraded");
+		expect(r.details?.note).toBeUndefined();
+	});
+});
+
 describe("cerebras (statuspage)", () => {
 	const base = "https://status.cerebras.ai";
 	const cerebras: Service = { id: "cerebras", name: "Cerebras", category: "AI", weight: 4, source: { type: "statuspage", base } };
@@ -286,6 +373,29 @@ describe("cloud providers (GCP & Azure RSS feeds)", () => {
 
 	it("GCP: a fresh active outage reads as down", async () => {
 		fetchSpy.mockResolvedValue(reply(gcpAtom("Compute Engine experiencing a major outage", "<p>We are investigating a major outage affecting Compute Engine.</p>")));
+		expect((await resolveGcp()).status).toBe("down");
+	});
+
+	// Regression: a "RESOLVED:" entry whose body is the incident report used to read
+	// as down for the full 48h freshness window (12 false GCP incidents in prod).
+	const incidentReport =
+		"<p>Incident began at <strong>2026-10-19 23:00</strong> and ended at <strong>2026-10-20 05:08</strong>.</p><p><strong>Incident Report Summary</strong> A data center facility that hosts europe-west2-b experienced an external electrical power disruption. This resulted in service unavailability and a major outage for workloads in this zone.</p>";
+
+	it("GCP: a 'RESOLVED:' title wins over an incident-report body", async () => {
+		fetchSpy.mockResolvedValue(reply(gcpAtom("RESOLVED: Multiple services were experiencing issues in the europe-west2 region.", incidentReport)));
+		const r = await resolveGcp();
+		expect(r.status).toBe("up");
+		expect(r.details?.incident).toBeUndefined();
+	});
+
+	it("Firebase: a 'RESOLVED:' title reads as up (same Google feed format)", async () => {
+		fetchSpy.mockResolvedValue(reply(gcpAtom("RESOLVED: We are tracking a networking issue that may affect a significant part of the fleet", incidentReport)));
+		const r = await resolveStatus(svc({ type: "rss", url: "https://status.firebase.google.com/en/feed.atom", statusUrl: "https://status.firebase.google.com" }));
+		expect(r.status).toBe("up");
+	});
+
+	it("GCP: an 'UPDATE:' title carries no state, so the active body still reads as down", async () => {
+		fetchSpy.mockResolvedValue(reply(gcpAtom("UPDATE: Multiple services are experiencing issues in the europe-west2 region.", "<p>We are investigating a major outage affecting multiple services.</p>")));
 		expect((await resolveGcp()).status).toBe("down");
 	});
 

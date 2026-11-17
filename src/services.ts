@@ -21,7 +21,9 @@
 export type StatusLevel = "up" | "degraded" | "down" | "unknown";
 
 export type ServiceSource =
-	| { type: "statuspage"; base: string }
+	// excludeGroups: component-group names to ignore; the indicator is then recomputed
+	// from the remaining components + incidents (for per-location noise, e.g. Cloudflare PoPs).
+	| { type: "statuspage"; base: string; excludeGroups?: string[] }
 	| { type: "rss"; url: string; statusUrl?: string } // statusUrl overrides the "Visit status page" link (defaults to feed URL origin)
 	| { type: "http"; url: string; statusUrl?: string } // statusUrl overrides when the ping URL isn't the status page
 	| { type: "aws-health"; url: string; statusUrl?: string }; // AWS Health Dashboard current-events JSON
@@ -73,7 +75,11 @@ export interface ServiceStatus {
 export const SERVICES: Service[] = [
 	// --- Developer & Cloud ---
 	{ id: "github", name: "GitHub", category: "Developer & Cloud", weight: 9, source: { type: "statuspage", base: "https://www.githubstatus.com" } },
-	{ id: "cloudflare", name: "Cloudflare", category: "Developer & Cloud", weight: 8, source: { type: "statuspage", base: "https://www.cloudflarestatus.com" } },
+	// Cloudflare lists ~345 datacenters (PoPs) in regional groups alongside its products;
+	// dozens are always "Re-routed" or in maintenance, which pinned the indicator at
+	// `minor` (degraded continuously since 2026-06-03). Ignore the regional groups and
+	// judge by the "Cloudflare Sites and Services" products + incidents instead.
+	{ id: "cloudflare", name: "Cloudflare", category: "Developer & Cloud", weight: 8, source: { type: "statuspage", base: "https://www.cloudflarestatus.com", excludeGroups: ["North America", "Europe", "Asia", "Africa", "Middle East", "Oceania", "Latin America & the Caribbean"] } },
 	{ id: "npm", name: "npm", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://status.npmjs.org" } },
 	{ id: "digitalocean", name: "DigitalOcean", category: "Developer & Cloud", weight: 4, source: { type: "statuspage", base: "https://status.digitalocean.com" } },
 	{ id: "vercel", name: "Vercel", category: "Developer & Cloud", weight: 5, source: { type: "statuspage", base: "https://www.vercel-status.com" } },
