@@ -26,9 +26,9 @@
     "fast-xml-parser": "^5.11.2"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.8.3",
+    "@cloudflare/vitest-plugin": "^1.9.0",
     "typescript": "^6.0.3",
-    "vitest": "^5.1.0",
-    "wrangler": "^4.149.0"
+    "vitest": "^5.1.1",
+    "wrangler": "^4.166.0"
   }
 }
